@@ -1,0 +1,15 @@
+node_modules
+.expo
+.tmp-home
+dist
+ios
+android
+
+*.log
+.DS_Store
+
+# Secrets — never commit. The publishable key lives in .env; the service_role
+# key belongs nowhere near this repo.
+.env
+.env.local
+Supabase.md

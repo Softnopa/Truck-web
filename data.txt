@@ -1,0 +1,797 @@
+Here's a professional, AI-optimized prompt you can paste into **Fable 5 (VS Code AI)**. I expanded your idea, organized it into features, added missing details, and made it production-ready.
+
+---
+
+# PROMPT
+
+## Create a Full Stack Fruit Truck Management Application
+
+Build a **modern, premium-looking Fruit Truck Management System** that works on:
+
+* Android APK
+* Windows (localhost)
+* Responsive Web
+* Offline + Online synchronization
+* Database Ready
+
+Use modern UI with:
+
+* Glassmorphism
+* Smooth animations
+* Neon glowing cards
+* Rounded corners
+* Beautiful gradients
+* Fast transitions
+* Dark & Light mode
+* Professional dashboard
+
+The app should feel like a premium business application.
+
+---
+
+# Login
+
+There is **NO registration**.
+
+Only Login.
+
+Username:
+
+```
+Azamat
+```
+
+Password:
+
+```
+Azamat
+```
+
+After successful login, the app opens the dashboard.
+
+Later I can add more users.
+
+Current users:
+
+* Azamat (Boss)
+* Farrux (Boss)
+* Zafar (Boss)
+
+All three users use the SAME shared database.
+
+---
+
+# Dashboard
+
+Bottom Navigation with 3 pages.
+
+1. Trucks
+2. Sales
+3. History / Astatka
+
+---
+
+# Trucks Section
+
+At the top:
+
+Large Search Bar
+
+The search should instantly search by:
+
+* Truck Number
+* Fruit Name
+* Date
+* Driver
+* Any keyword
+
+Search must be extremely fast.
+
+Then show a large floating "+" button.
+
+When pressing "+" open Add Truck page.
+
+---
+
+# Add Truck
+
+Inputs:
+
+## 1
+
+Truck Number
+
+Use a smooth selector similar to Uzbekistan license plates.
+
+Example:
+
+```
+01 A123AA
+70 B555BB
+95 C111DD
+```
+
+Make it look premium like the attached image.
+
+The Region selector should be dropdown.
+
+Series should auto uppercase.
+
+Numbers only.
+
+Exactly like Uzbekistan plates.
+
+---
+
+## 2
+
+Truck Photo
+
+Optional.
+
+Camera
+
+Gallery
+
+---
+
+## 3
+
+Arrival Date
+
+Beautiful Date Picker.
+
+---
+
+## 4
+
+Fruit Type
+
+Dropdown.
+
+Include ALL fruits that exist.
+
+Examples:
+
+Apple
+
+Pear
+
+Banana
+
+Orange
+
+Mandarin
+
+Peach
+
+Apricot
+
+Cherry
+
+Pineapple
+
+Mango
+
+Kiwi
+
+Coconut
+
+Dragon Fruit
+
+Papaya
+
+Watermelon
+
+Melon
+
+Lemon
+
+Lime
+
+Grapes
+
+Pomegranate
+
+Strawberry
+
+Blueberry
+
+Blackberry
+
+Raspberry
+
+Passion Fruit
+
+Guava
+
+Durian
+
+Lychee
+
+and many more.
+
+Allow custom fruit too.
+
+---
+
+## 5
+
+Boxes Count
+
+Number input.
+
+---
+
+## 6
+
+Total Weight
+
+Input.
+
+Examples
+
+20 tons
+
+15.5 tons
+
+1200 kg
+
+---
+
+## 7
+
+Price per Box
+
+Input.
+
+Automatically calculate Total Value.
+
+---
+
+## 8
+
+Three Editable Custom Inputs
+
+These inputs should have editable titles.
+
+Example
+
+Input Title:
+
+Driver Name
+
+or
+
+Warehouse
+
+or
+
+Quality
+
+or anything I rename later.
+
+---
+
+Save Button.
+
+---
+
+# Truck Cards
+
+After saving,
+
+Display beautiful glowing cards.
+
+Each card contains:
+
+Truck Number
+
+Fruit
+
+Boxes
+
+Weight
+
+Status
+
+Date
+
+Photo
+
+When clicking the card,
+
+Open full details page.
+
+Allow Edit.
+
+Allow Delete.
+
+Allow Change Status.
+
+---
+
+# Truck Status
+
+Automatic.
+
+If Boxes > 0
+
+Status:
+
+🟢 Online
+
+If Boxes = 0
+
+Status:
+
+🔴 Offline
+
+Automatically update.
+
+---
+
+# Sales Section
+
+Floating "+" button.
+
+Pressing opens Add Customer Sale.
+
+---
+
+# Customer Inputs
+
+Date
+
+Customer Name
+
+Phone Number
+
+Fruit
+
+Boxes Bought
+
+Price Per Box
+
+Discount
+
+Total Price
+
+Amount Paid
+
+Remaining Amount
+
+Notes
+
+---
+
+Everything should calculate in REAL TIME while typing.
+
+Example
+
+20 boxes
+
+100,000 UZS each
+
+=
+
+2,000,000 UZS
+
+Discount
+
+100,000
+
+=
+
+1,900,000
+
+Paid
+
+500,000
+
+Remaining
+
+1,400,000
+
+Everything updates instantly.
+
+---
+
+# Card Colors
+
+If Remaining = 0
+
+Glow Green
+
+If Paid Partially
+
+Glow Yellow
+
+If Paid Nothing
+
+Glow Red
+
+---
+
+# Payment Button
+
+If debt exists
+
+Show button
+
+"Pay Money"
+
+Pressing opens payment screen.
+
+User enters payment.
+
+Card automatically updates.
+
+If debt reaches zero
+
+Turn Green.
+
+---
+
+# SMS Reminder
+
+Collect customer's phone number.
+
+When pressing:
+
+WARN
+
+Automatically send SMS.
+
+Example:
+
+Uzbek:
+
+```
+Hurmatli mijoz.
+
+Sizning qarzingiz:
+
+1,450,000 so'm.
+
+Iltimos imkon qadar tezroq to'lang.
+
+Rahmat.
+```
+
+English:
+
+```
+Dear customer,
+
+You still owe
+
+$120
+
+Please pay as soon as possible.
+
+Thank you.
+```
+
+Design SMS system so it can later connect to:
+
+Android SMS
+
+Twilio
+
+Firebase
+
+or any SMS API.
+
+---
+
+# Currency
+
+Support
+
+UZS
+
+USD
+
+Automatically fetch LIVE USD exchange rate.
+
+Store both values.
+
+Example
+
+Total
+
+15,000,000 UZS
+
+≈
+
+$1180
+
+Update automatically.
+
+---
+
+# History Section
+
+Show every completed sale.
+
+Search.
+
+Filters.
+
+Sort.
+
+Date Range.
+
+---
+
+# ASTATKA Card
+
+At the top.
+
+Huge glowing card.
+
+Title:
+
+"Астатка"
+
+It should display
+
+Total Remaining Debt
+
+Example
+
+```
+17,450,000 UZS
+
+$1,380
+```
+
+Below,
+
+Display customers with debt.
+
+Grouped:
+
+Red
+
+Yellow
+
+Green
+
+---
+
+Each customer card includes
+
+Name
+
+Phone
+
+Debt
+
+Last Payment
+
+WARN Button
+
+Open Details Button
+
+---
+
+# Notifications
+
+Daily reminder for unpaid customers.
+
+Optional push notifications.
+
+---
+
+# Database
+
+Use architecture that supports:
+
+SQLite Offline
+
+Then easy migration to
+
+PostgreSQL
+
+Firebase
+
+Supabase
+
+SQL Server
+
+NoSQL
+
+Repository Pattern.
+
+---
+
+# Offline Mode
+
+Everything works without internet.
+
+When internet returns
+
+Automatically sync.
+
+No duplicate records.
+
+---
+
+# Animations
+
+Add lots of animations.
+
+Examples
+
+Card hover
+
+Card glow
+
+Smooth page transitions
+
+Button ripple
+
+Floating action button animation
+
+Loading skeletons
+
+Animated counters
+
+Shimmer effects
+
+Smooth expandable cards
+
+Slide animations
+
+Fade animations
+
+Lottie loading animations
+
+Premium interactions everywhere.
+
+---
+
+# Dashboard Statistics
+
+Top cards.
+
+Total Trucks
+
+Total Boxes
+
+Available Boxes
+
+Sold Boxes
+
+Today's Income
+
+Monthly Income
+
+Customers
+
+Pending Payments
+
+Total Debt
+
+---
+
+# Charts
+
+Weekly Sales
+
+Monthly Sales
+
+Fruit Distribution
+
+Income
+
+Debt
+
+Boxes Remaining
+
+---
+
+# Settings
+
+Dark Mode
+
+Light Mode
+
+Language
+
+English
+
+Uzbek
+
+Russian
+
+Backup Database
+
+Restore Database
+
+Export Excel
+
+Export PDF
+
+Import Excel
+
+App Version
+
+---
+
+# Security
+
+Remember Login
+
+Logout
+
+Encrypted local database
+
+Role system for future expansion
+
+---
+
+# Technology Stack
+
+Preferred:
+
+Frontend:
+
+* React
+* TypeScript
+* TailwindCSS
+* Framer Motion
+
+Desktop:
+
+* Electron (Windows localhost support)
+
+Mobile:
+
+* Capacitor (APK generation)
+
+Backend:
+
+* Node.js
+* Express
+
+Database:
+
+* SQLite (offline)
+* Easy migration to PostgreSQL/Supabase/Firebase
+
+State Management:
+
+* Zustand
+
+Forms:
+
+* React Hook Form
+
+Validation:
+
+* Zod
+
+Charts:
+
+* Recharts
+
+Icons:
+
+* Lucide React
+
+Tables:
+
+* TanStack Table
+
+Notifications:
+
+* React Hot Toast
+
+---
+
+# Final Goal
+
+Create a premium, enterprise-level Fruit Truck Management System with beautiful glowing UI, smooth animations, offline-first architecture, shared database support, real-time calculations, SMS-ready integration, Windows localhost support, and Android APK compatibility. The code should be clean, modular, scalable, and production-ready.

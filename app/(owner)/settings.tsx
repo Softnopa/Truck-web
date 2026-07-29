@@ -1,0 +1,93 @@
+import { ScrollView, StyleSheet } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { Button } from '@/components/Button';
+import { Card, Divider, SectionHeader } from '@/components/Card';
+import { Header } from '@/components/Header';
+import { Screen } from '@/components/Screen';
+import { Segmented } from '@/components/Segmented';
+import { AccentPicker } from '@/components/AccentPicker';
+import { SettingBlock, SettingRow } from '@/components/SettingRow';
+import { Text } from '@/components/Text';
+import { LANGUAGES, LANGUAGE_LABEL } from '@/i18n/strings';
+import { useAuth } from '@/providers/AuthProvider';
+import { usePrefs } from '@/providers/PreferencesProvider';
+import { TEXT_SCALES, palette, space } from '@/theme/tokens';
+
+/** Owner-only customization. Every value is persisted per user in Supabase. */
+export default function OwnerSettings() {
+  const { t, lang, accent, textScale, fun, setLanguage, setAccent, setTextScale, setFun } =
+    usePrefs();
+  const { profile, signOut } = useAuth();
+
+  return (
+    <Screen edges={['top', 'left', 'right']}>
+      <Header title={t('settings')} />
+
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <Animated.View entering={FadeInDown.duration(320)}>
+          <SectionHeader title={t('appearance')} />
+          <Card>
+            <SettingBlock label={t('language')}>
+              <Segmented
+                options={LANGUAGES.map((l) => ({ value: l, label: LANGUAGE_LABEL[l] }))}
+                value={lang}
+                onChange={(next) => void setLanguage(next)}
+              />
+            </SettingBlock>
+
+            <Divider />
+
+            <SettingBlock label={t('skin')}>
+              <Segmented
+                options={[
+                  { value: 0, label: t('skinCalm') },
+                  { value: 1, label: t('skinFun') },
+                ]}
+                value={fun ? 1 : 0}
+                onChange={(next) => void setFun(next === 1)}
+              />
+              <Text variant="caption" color={palette.textFaint}>
+                {t('skinHint')}
+              </Text>
+            </SettingBlock>
+
+            <Divider />
+
+            <SettingBlock label={t('accentColor')}>
+              <AccentPicker value={accent} onChange={(next) => void setAccent(next)} />
+            </SettingBlock>
+
+            <Divider />
+
+            <SettingBlock label={t('textSize')}>
+              <Segmented
+                options={TEXT_SCALES.map((s) => ({ value: s, label: `${Math.round(s * 100)}%` }))}
+                value={textScale}
+                onChange={(next) => void setTextScale(next)}
+              />
+              <Text variant="body" color={palette.textDim}>
+                {t('textSizeSample')}
+              </Text>
+            </SettingBlock>
+          </Card>
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.delay(90).duration(320)}>
+          <SectionHeader title={t('account')} />
+          <Card>
+            <SettingRow label={profile?.full_name ?? t('none')} description={t('roleOwner')} />
+          </Card>
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.delay(150).duration(320)} style={styles.signOut}>
+          <Button label={t('signOut')} variant="secondary" onPress={() => void signOut()} />
+        </Animated.View>
+      </ScrollView>
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: { paddingBottom: space.xxl },
+  signOut: { marginTop: space.xl },
+});
