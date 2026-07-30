@@ -134,3 +134,4 @@ into a Russian screen.
 Custom inputs, the Electron/Vite desktop shell, the IndexedDB offline layer,
 dual USD/UZS currency, PDF/Excel export, plaintext passwords, and six of the ten
 fields on the truck form.
+# Truck-web
