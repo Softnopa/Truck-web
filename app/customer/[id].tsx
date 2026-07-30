@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Button, PressableScale } from '@/components/Button';
 import { Badge, Card } from '@/components/Card';
+import { Confirm } from '@/components/Confirm';
 import { EmptyState } from '@/components/EmptyState';
 import { Field } from '@/components/Field';
 import { Header } from '@/components/Header';
@@ -76,6 +77,9 @@ export default function CustomerDetail() {
 
   const [warnState, setWarnState] = useState<WarnResult | null>(null);
   const [warningId, setWarningId] = useState<string | null>(null);
+  const [askWarn, setAskWarn] = useState(false);
+  const [warning, setWarning] = useState(false);
+  const [warnFailed, setWarnFailed] = useState(false);
   const [paySale, setPaySale] = useState<SaleDoc | null>(null);
   const [payAmount, setPayAmount] = useState('');
 
@@ -102,43 +106,57 @@ export default function CustomerDetail() {
   const sendWarning = async () => {
     if (!profile || !customerId || !data) return;
 
-    const consent = data.consent;
-    const allowed = Boolean(consent?.location_granted && !consent.revoked_at);
+    setWarning(true);
+    setWarnFailed(false);
+    try {
+      const consent = data.consent;
+      const allowed = Boolean(consent?.location_granted && !consent.revoked_at);
 
-    const warning = await raiseWarning(customerId, profile.id);
-    setWarningId(warning.id);
-    setWarnState('pending');
-    haptics.heavy();
+      const raised = await raiseWarning(customerId, profile.id);
+      setWarningId(raised.id);
+      setWarnState('pending');
+      haptics.heavy();
 
-    // The push always goes out; only the location request is gated on consent.
-    const tokens = await tokensFor(customerId);
-    const delivered = await sendPush(
-      tokens,
-      t('warnPushTitle', { name: profile.full_name }),
-      t('warnPushBody'),
-      { warningId: warning.id }
-    );
+      // The push always goes out; only the location request is gated on consent.
+      const tokens = await tokensFor(customerId);
+      const delivered = await sendPush(
+        tokens,
+        t('warnPushTitle', { name: profile.full_name }),
+        t('warnPushBody'),
+        { warningId: raised.id }
+      );
 
-    if (!allowed) {
-      // Consent refused or revoked: recorded as such, never silently tracked.
-      await setWarningResult(warning.id, 'denied');
-      setWarnState('denied');
-      return;
-    }
+      if (!allowed) {
+        // Consent refused or revoked: recorded as such, never silently tracked.
+        await setWarningResult(raised.id, 'denied');
+        setWarnState('denied');
+        return;
+      }
 
-    if (!delivered && tokens.length === 0) {
-      await setWarningResult(warning.id, 'no_device');
-      setWarnState('no_device');
+      if (!delivered && tokens.length === 0) {
+        // Nothing to push to. Recorded as such so the owner knows the customer
+        // was not buzzed — their device still answers over realtime if the app
+        // happens to be open, which updates this row again.
+        await setWarningResult(raised.id, 'no_device');
+        setWarnState('no_device');
+      }
+    } catch {
+      // Raising the warning is the part that can fail outright — offline, or
+      // RLS refusing the insert. Without this the button looked dead.
+      haptics.failed();
+      setWarnState(null);
+      setWarnFailed(true);
+    } finally {
+      setWarning(false);
+      setAskWarn(false);
     }
   };
 
   const confirmWarn = () => {
     if (!data) return;
     haptics.warn();
-    Alert.alert(t('warnTitle'), t('warnBody', { name: data.name }), [
-      { text: t('cancel'), style: 'cancel' },
-      { text: t('warnSend'), style: 'destructive', onPress: () => void sendWarning() },
-    ]);
+    setWarnFailed(false);
+    setAskWarn(true);
   };
 
   const submitPayment = async () => {
@@ -185,6 +203,21 @@ export default function CustomerDetail() {
         actionLabel={t('addSale')}
         onAction={() => router.push(`/new-sale?customerId=${customerId}`)}
       />
+
+      {warnFailed ? (
+        <Animated.View
+          entering={FadeIn.duration(220)}
+          style={[styles.warnBanner, { backgroundColor: theme.dangerSoft }]}
+        >
+          <Ionicons name="alert-circle" size={18} color={theme.danger} />
+          <Text variant="label" color={theme.danger} style={styles.warnText}>
+            {t('warnFailed')}
+          </Text>
+          <PressableScale onPress={() => setWarnFailed(false)} to={0.94} haptic="tap">
+            <Ionicons name="close" size={16} color={theme.danger} />
+          </PressableScale>
+        </Animated.View>
+      ) : null}
 
       {warnState ? (
         <Animated.View
@@ -300,10 +333,24 @@ export default function CustomerDetail() {
             variant="danger"
             haptic="heavy"
             onPress={confirmWarn}
+            disabled={!data}
+            loading={warning}
             icon={<Ionicons name="warning" size={20} color="#FFF5F4" />}
           />
         </View>
       )}
+
+      <Confirm
+        visible={askWarn}
+        title={t('warnTitle')}
+        message={t('warnBody', { name: data?.name ?? '' })}
+        confirmLabel={t('warnSend')}
+        cancelLabel={t('cancel')}
+        destructive
+        busy={warning}
+        onConfirm={() => void sendWarning()}
+        onCancel={() => setAskWarn(false)}
+      />
 
       <Sheet
         visible={paySale !== null}

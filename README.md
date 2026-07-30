@@ -86,6 +86,47 @@ needs. Until then the WARN flow still works and logs the result as `no_device`.
 No server component is needed; Expo's push endpoint is called directly from the
 owner's device.
 
+### 7. Telegram
+
+One bot does two jobs: it announces new trucks and sales in a channel, and it
+carries the messages owners send to their contacts. Three edge functions, all
+in `supabase/functions/`.
+
+1. Create the bot with BotFather, and add it as an **admin** of the channel.
+2. In **Edge Functions → Secrets**, add:
+   - `TELEGRAM_BOT_TOKEN` — shared by all three functions
+   - `TELEGRAM_CHANNEL_ID` (e.g. `-1001234567890`)
+   - `TELEGRAM_WEBHOOK_SECRET` — any long random string you choose
+   - optionally `TELEGRAM_CHANNEL_LANG=ru|uz|en`
+3. Deploy `announce-telegram`, `send-telegram` and `telegram-webhook`.
+   **Turn "Verify JWT" off for `telegram-webhook` only** — Telegram calls it and
+   has no Supabase session, so with verification on every update is rejected
+   before it reaches the code and the bot looks dead. The other two keep it on;
+   they run as the signed-in owner.
+4. Point Telegram at the webhook, passing the same secret:
+
+   ```bash
+   curl "https://api.telegram.org/bot<TOKEN>/setWebhook" \
+     -d "url=https://<project-ref>.supabase.co/functions/v1/telegram-webhook" \
+     -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+   ```
+
+5. Put the bot's `@username` (without the `@`) in `EXPO_PUBLIC_TELEGRAM_BOT_USERNAME`.
+   Only the username — the token stays server-side. Without it the Contacts
+   screen has no invite link to share and says so.
+
+Announcements fire automatically when a truck or sale is created; `telegram_posts`
+(migration 0007) makes sure a retry cannot post the same sale twice.
+
+**Contacts** are people with no app account. The owner shares
+`t.me/<bot>?start=<invite_code>`; tapping it sends `/start <code>` to the
+webhook, which trades the code for that chat id. Until they do, the app shows
+"Not connected yet" and a send is refused with a reason rather than failing
+silently.
+
+If invite links were created before migration 0008, run it — codes minted
+before it could contain a `+`, which a Telegram deep link cannot carry.
+
 ## Troubleshooting
 
 **`EPERM: operation not permitted, mkdir 'C:\Users\<you>\.expo'`**

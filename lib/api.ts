@@ -29,6 +29,98 @@ export interface Author {
 
 const nonNull = <T>(v: T | null): v is T => v !== null;
 
+// --- edge functions ----------------------------------------------------------
+
+/**
+ * Why an edge function call failed, in terms a screen can act on.
+ *
+ * `code` is what the function itself reported; `unreachable` is ours, for the
+ * cases where the request never got an answer at all — the function is not
+ * deployed, the browser blocked it on CORS, or the phone is offline. Those look
+ * identical to `supabase-js`, which reports every one of them as the same
+ * opaque "Failed to send a request to the Edge Function".
+ */
+export type EdgeErrorCode =
+  | 'unreachable'
+  | 'unauthorized'
+  | 'not_configured'
+  | 'bad_request'
+  | 'not_found'
+  | 'not_linked'
+  | 'blocked'
+  | 'telegram_failed'
+  | 'forbidden'
+  | 'server_error';
+
+export class EdgeFunctionError extends Error {
+  readonly code: EdgeErrorCode;
+  readonly status: number | null;
+  /** The server's own words, kept for logs — never shown raw to an owner. */
+  readonly detail: string;
+
+  constructor(code: EdgeErrorCode, status: number | null, detail: string) {
+    super(`${code}${status ? ` (${status})` : ''}${detail ? `: ${detail}` : ''}`);
+    this.name = 'EdgeFunctionError';
+    this.code = code;
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+function codeForStatus(status: number): EdgeErrorCode {
+  switch (status) {
+    case 400:
+      return 'bad_request';
+    case 401:
+      return 'unauthorized';
+    case 403:
+      return 'forbidden';
+    case 404:
+      return 'not_found';
+    case 409:
+      return 'not_linked';
+    case 502:
+      return 'telegram_failed';
+    default:
+      return 'server_error';
+  }
+}
+
+/**
+ * Calls an edge function and turns any failure into an `EdgeFunctionError`.
+ *
+ * `functions.invoke` hands back a `FunctionsHttpError` whose message says only
+ * that the function returned non-2xx — the body, which is where the actual
+ * reason lives, is left on `error.context` for the caller to read. Nothing was
+ * reading it, so a client who had never opened the bot link and a bot token
+ * that was never configured produced exactly the same silence on screen.
+ */
+async function invokeFunction<T>(name: string, body: Record<string, unknown>): Promise<T | null> {
+  const { data, error } = await supabase.functions.invoke<T>(name, { body });
+  if (!error) return data ?? null;
+
+  const context: unknown = (error as { context?: unknown }).context;
+  const response = context instanceof Response ? context : null;
+
+  if (!response) {
+    // No HTTP answer at all: not deployed, CORS-blocked, or no network.
+    throw new EdgeFunctionError('unreachable', null, error.message);
+  }
+
+  const text = await response.text().catch(() => '');
+  let code: EdgeErrorCode | null = null;
+  let detail = text;
+  try {
+    const parsed = JSON.parse(text) as { error?: string; message?: string };
+    if (typeof parsed.error === 'string') code = parsed.error as EdgeErrorCode;
+    if (typeof parsed.message === 'string') detail = parsed.message;
+  } catch {
+    // Older deploys answer in plain text; the status still classifies it.
+  }
+
+  throw new EdgeFunctionError(code ?? codeForStatus(response.status), response.status, detail);
+}
+
 // --- trucks -----------------------------------------------------------------
 
 export async function listTrucks(): Promise<TruckDoc[]> {
@@ -62,6 +154,10 @@ export async function createTruck(
   };
   const { error } = await supabase.from('trucks').insert({ id, payload: { ...doc }, updated_at: now });
   if (error) throw error;
+
+  void announceToChannel('truck', id).catch((err) => {
+    console.warn('Telegram announce failed for truck', id, err);
+  });
 }
 
 export async function getTruck(id: string): Promise<TruckDoc | null> {
@@ -144,6 +240,10 @@ export async function createSale(
   const { error } = await supabase.from('sales').insert({ id, payload: { ...doc }, updated_at: now });
   if (error) throw error;
 
+  void announceToChannel('sale', id).catch((err) => {
+    console.warn('Telegram announce failed for sale', id, err);
+  });
+
   if (input.truckId) await bumpTruckSold(input.truckId, input.boxes);
 }
 
@@ -166,6 +266,11 @@ export async function createPayment(saleId: string, amount: number): Promise<voi
     .from('payments')
     .insert({ id, payload: { ...doc }, updated_at: now });
   if (error) throw error;
+}
+
+/** Posts a notification to the Telegram channel via the edge function. */
+export async function announceToChannel(kind: 'truck' | 'sale', docId: string): Promise<void> {
+  await invokeFunction('announce-telegram', { kind, id: docId });
 }
 
 // --- walk-in customers -------------------------------------------------------
@@ -365,10 +470,14 @@ export async function deleteClient(id: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Calls the `send-telegram` edge function, which holds the bot token. */
+/**
+ * Calls the `send-telegram` edge function, which holds the bot token.
+ *
+ * Throws `EdgeFunctionError` — the caller is expected to show why, not just
+ * that it failed.
+ */
 export async function sendTelegramMessage(clientId: string, message: string): Promise<void> {
-  const { error } = await supabase.functions.invoke('send-telegram', {
-    body: { clientId, message },
-  });
-  if (error) throw error;
+  const text = message.trim();
+  if (!text) throw new EdgeFunctionError('bad_request', null, 'empty message');
+  await invokeFunction('send-telegram', { clientId, message: text });
 }

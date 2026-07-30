@@ -24,6 +24,8 @@ interface Props {
   suffix?: string;
   autoFocus?: boolean;
   maxLength?: number;
+  /** Grows to a few lines — for prose, like a message to a client. */
+  multiline?: boolean;
 }
 
 export function Field({
@@ -37,6 +39,7 @@ export function Field({
   suffix,
   autoFocus,
   maxLength,
+  multiline,
 }: Props) {
   const { accentColors, textScale } = usePrefs();
   const { radius } = useSkin();
@@ -55,7 +58,9 @@ export function Field({
       <Text variant="label" color={focused ? accentColors.base : theme.textDim}>
         {label}
       </Text>
-      <Animated.View style={[styles.box, { borderRadius: radius.md }, border]}>
+      <Animated.View
+        style={[styles.box, { borderRadius: radius.md }, multiline && styles.boxTall, border]}
+      >
         <TextInput
           value={value}
           onChangeText={onChangeText}
@@ -67,10 +72,17 @@ export function Field({
           secureTextEntry={secureTextEntry}
           autoFocus={autoFocus}
           maxLength={maxLength}
+          multiline={multiline}
+          textAlignVertical={multiline ? 'top' : 'center'}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           selectionColor={accentColors.base}
-          style={[styles.input, typeStyle('body', textScale), { color: theme.text }]}
+          style={[
+            styles.input,
+            typeStyle('body', textScale),
+            { color: theme.text },
+            multiline && styles.inputTall,
+          ]}
         />
         {suffix ? (
           <Text variant="label" color={theme.textFaint}>
@@ -92,5 +104,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space.sm,
   },
+  boxTall: { alignItems: 'flex-start' },
   input: { flex: 1, paddingVertical: space.md },
+  // A message is usually two or three lines; taller than that and it scrolls.
+  inputTall: { minHeight: 96, maxHeight: 160 },
 });
