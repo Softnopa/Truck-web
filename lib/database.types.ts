@@ -81,7 +81,7 @@ export type ClientRow = {
   updated_at: string;
 };
 
-/** The three pre-existing document tables. Their shape lives in `payload`. */
+/** The document tables. Their shape lives in `payload`. */
 export type DocRow = {
   id: string;
   updated_at: string;
@@ -150,6 +150,7 @@ export type Database = {
       trucks: DocTable;
       sales: DocTable;
       payments: DocTable;
+      customers: DocTable;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

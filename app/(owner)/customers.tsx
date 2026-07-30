@@ -10,9 +10,9 @@ import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Segmented } from '@/components/Segmented';
 import { Text } from '@/components/Text';
-import { listConsents, listPayments, listProfiles, listSales } from '@/lib/api';
+import { listConsents, listCustomers, listPayments, listProfiles, listSales } from '@/lib/api';
 import { blankIfZero, formatDate, initials } from '@/lib/format';
-import { saleTotal } from '@/lib/types';
+import { isWalkIn, saleTotal } from '@/lib/types';
 import { useLoader } from '@/lib/useLoader';
 import { useRealtime } from '@/lib/useRealtime';
 import { usePrefs } from '@/providers/PreferencesProvider';
@@ -27,9 +27,16 @@ interface CustomerSummary {
   lastSaleAt: string | null;
 }
 
+/**
+ * Two kinds of customer land in this list: people who signed in (rows in
+ * `profiles`) and walk-ins an owner typed in (rows in `customers`). Sales point
+ * at both through the same free-text `customerId`, so the debt arithmetic below
+ * does not care which is which.
+ */
 async function loadCustomers(): Promise<CustomerSummary[]> {
-  const [profiles, consents, sales, payments] = await Promise.all([
+  const [profiles, walkIns, consents, sales, payments] = await Promise.all([
     listProfiles(),
+    listCustomers(),
     listConsents(),
     listSales(),
     listPayments(),
@@ -53,7 +60,7 @@ async function loadCustomers(): Promise<CustomerSummary[]> {
 
   const consentByUser = new Map(consents.map((c) => [c.user_id, c]));
 
-  return profiles
+  const withAccounts: CustomerSummary[] = profiles
     .filter((p) => p.role === 'customer')
     .map((p) => {
       const consent = consentByUser.get(p.id);
@@ -65,6 +72,19 @@ async function loadCustomers(): Promise<CustomerSummary[]> {
         lastSaleAt: lastSale.get(p.id) ?? null,
       };
     });
+
+  // A walk-in has no device, so it can never share a location.
+  const walkInRows: CustomerSummary[] = walkIns.map((c) => ({
+    id: c.id,
+    name: c.name,
+    outstanding: owed.get(c.id) ?? 0,
+    sharesLocation: false,
+    lastSaleAt: lastSale.get(c.id) ?? null,
+  }));
+
+  // One alphabetical list rather than two blocks: which table someone came from
+  // is an implementation detail, not something an owner should have to know.
+  return [...withAccounts, ...walkInRows].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 type Filter = 'all' | 'debt';
@@ -78,7 +98,7 @@ export default function Customers() {
 
   // Another owner recording a payment changes who owes what, so this list has
   // to follow their writes, not just this device's.
-  useRealtime('customers', ['sales', 'payments', 'profiles', 'consents'], reload);
+  useRealtime('customers', ['sales', 'payments', 'profiles', 'consents', 'customers'], reload);
 
   const all = useMemo(() => data ?? [], [data]);
   const debtors = useMemo(
@@ -92,7 +112,12 @@ export default function Customers() {
 
   return (
     <Screen edges={['top', 'left', 'right']}>
-      <Header title={t('customers')} />
+      <Header
+        title={t('customers')}
+        actionIcon="add"
+        actionLabel={t('addCustomer')}
+        onAction={() => router.push('/new-customer')}
+      />
 
       <View style={styles.controls}>
         <Segmented
@@ -208,11 +233,15 @@ export default function Customers() {
                         </Text>
                       ) : null}
                     </View>
-                    <Ionicons
-                      name={item.sharesLocation ? 'location' : 'location-outline'}
-                      size={18}
-                      color={item.sharesLocation ? accentColors.base : theme.textFaint}
-                    />
+                    {/* Omitted for walk-ins: with no device there is no
+                        location to share, so a pin would promise nothing. */}
+                    {isWalkIn(item.id) ? null : (
+                      <Ionicons
+                        name={item.sharesLocation ? 'location' : 'location-outline'}
+                        size={18}
+                        color={item.sharesLocation ? accentColors.base : theme.textFaint}
+                      />
+                    )}
                     <Ionicons name="chevron-forward" size={18} color={theme.textFaint} />
                   </View>
                 </Card>

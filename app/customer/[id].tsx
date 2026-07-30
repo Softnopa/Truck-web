@@ -13,9 +13,9 @@ import { Sheet } from '@/components/Sheet';
 import { Text } from '@/components/Text';
 import {
   createPayment,
+  customerName,
   listConsents,
   listPayments,
-  listProfiles,
   listSales,
   raiseWarning,
   setWarningResult,
@@ -27,7 +27,7 @@ import { displayFruit } from '@/lib/fruits';
 import { haptics } from '@/lib/haptics';
 import { sendPush } from '@/lib/push';
 import { supabase } from '@/lib/supabase';
-import { saleTotal, type SaleDoc } from '@/lib/types';
+import { isWalkIn, saleTotal, type SaleDoc } from '@/lib/types';
 import { useLoader } from '@/lib/useLoader';
 import { useAuth } from '@/providers/AuthProvider';
 import { usePrefs } from '@/providers/PreferencesProvider';
@@ -42,8 +42,8 @@ interface Detail {
 }
 
 async function loadDetail(customerId: string): Promise<Detail> {
-  const [profiles, consents, sales, payments] = await Promise.all([
-    listProfiles(),
+  const [name, consents, sales, payments] = await Promise.all([
+    customerName(customerId),
     listConsents(),
     listSales(),
     listPayments(),
@@ -55,7 +55,7 @@ async function loadDetail(customerId: string): Promise<Detail> {
   }
 
   return {
-    name: profiles.find((p) => p.id === customerId)?.full_name ?? '',
+    name,
     consent: consents.find((c) => c.user_id === customerId) ?? null,
     sales: sales.filter((s) => s.customerId === customerId),
     paidBySale,
@@ -151,6 +151,10 @@ export default function CustomerDetail() {
     await reload();
   };
 
+  // No account means no device: nothing to push a warning to, and no location
+  // to ask for. The whole WARN flow is meaningless for a walk-in.
+  const walkIn = isWalkIn(customerId);
+
   const sales = data?.sales ?? [];
   const outstanding = sales.reduce(
     (sum, s) => sum + Math.max(0, saleTotal(s) - (data?.paidBySale.get(s.id) ?? 0)),
@@ -170,7 +174,11 @@ export default function CustomerDetail() {
     <Screen edges={['top', 'left', 'right', 'bottom']}>
       <Header
         title={data?.name || t('loading')}
-        subtitle={owed ? `${t('owes')} ${owed} ${t('soum')}` : t('settled')}
+        subtitle={
+          [owed ? `${t('owes')} ${owed} ${t('soum')}` : t('settled'), walkIn ? t('walkInBadge') : null]
+            .filter(Boolean)
+            .join(' · ')
+        }
         onBack={() => router.back()}
         onTitlePress={() => router.push(`/edit-customer?id=${customerId}`)}
         actionIcon="add"
@@ -285,15 +293,17 @@ export default function CustomerDetail() {
         }}
       />
 
-      <View style={styles.footer}>
-        <Button
-          label={t('warn')}
-          variant="danger"
-          haptic="heavy"
-          onPress={confirmWarn}
-          icon={<Ionicons name="warning" size={20} color="#FFF5F4" />}
-        />
-      </View>
+      {walkIn ? null : (
+        <View style={styles.footer}>
+          <Button
+            label={t('warn')}
+            variant="danger"
+            haptic="heavy"
+            onPress={confirmWarn}
+            icon={<Ionicons name="warning" size={20} color="#FFF5F4" />}
+          />
+        </View>
+      )}
 
       <Sheet
         visible={paySale !== null}

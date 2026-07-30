@@ -44,6 +44,31 @@ export interface PaymentDoc {
   createdAt: string;
 }
 
+/**
+ * A buyer with no account — the roadside customer who will never install the
+ * app. Lives in the `customers` document table (migration 0006) alongside the
+ * auth-backed customers in `profiles`, and is referenced by sales through the
+ * same free-text `customerId` field.
+ */
+export interface CustomerDoc {
+  id: string;
+  name: string;
+  phone: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Walk-in ids are minted by `docId('cust')`; profile ids are uuids from
+ * `auth.users`. The prefix is what tells the two apart wherever a screen holds
+ * only an id — a uuid can never start with `cust_`.
+ */
+export function isWalkIn(customerId: string): boolean {
+  return customerId.startsWith('cust_');
+}
+
 const isRecord = (v: Json): v is { [k: string]: Json } =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -90,6 +115,20 @@ export function parseSale(row: DocRow): SaleDoc | null {
     fruit: str(p.fruit),
     boxes: num(p.boxesBought) || num(p.boxes),
     pricePerBox: num(p.pricePerBox),
+    createdBy: str(p.createdBy),
+    createdByName: str(p.createdByName),
+    createdAt: str(p.createdAt, row.updated_at),
+    updatedAt: row.updated_at,
+  };
+}
+
+export function parseCustomer(row: DocRow): CustomerDoc | null {
+  const p = row.payload;
+  if (!isRecord(p)) return null;
+  return {
+    id: row.id,
+    name: str(p.name),
+    phone: str(p.phone),
     createdBy: str(p.createdBy),
     createdByName: str(p.createdByName),
     createdAt: str(p.createdAt, row.updated_at),

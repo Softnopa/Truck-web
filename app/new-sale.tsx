@@ -8,7 +8,7 @@ import { FormScroll } from '@/components/FormScroll';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Text } from '@/components/Text';
-import { createSale, listProfiles, listTrucks } from '@/lib/api';
+import { createSale, customerName, listTrucks } from '@/lib/api';
 import { blankIfZero, num, parseAmount } from '@/lib/format';
 import { displayFruit } from '@/lib/fruits';
 import { haptics } from '@/lib/haptics';
@@ -20,10 +20,10 @@ import { radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
 async function loadForm(customerId: string) {
-  const [trucks, profiles] = await Promise.all([listTrucks(), listProfiles()]);
+  const [trucks, name] = await Promise.all([listTrucks(), customerName(customerId)]);
   return {
     trucks: trucks.filter((tr) => truckRemaining(tr) > 0),
-    customerName: profiles.find((p) => p.id === customerId)?.full_name ?? '',
+    customerName: name,
   };
 }
 

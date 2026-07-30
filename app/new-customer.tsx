@@ -1,5 +1,5 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Button } from '@/components/Button';
@@ -7,65 +7,42 @@ import { Field } from '@/components/Field';
 import { FormScroll } from '@/components/FormScroll';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
-import { getCustomer, listProfiles, updateCustomer, updateProfile } from '@/lib/api';
+import { Text } from '@/components/Text';
+import { createCustomer } from '@/lib/api';
 import { haptics } from '@/lib/haptics';
-import { isWalkIn } from '@/lib/types';
-import { useLoader } from '@/lib/useLoader';
+import { useAuth } from '@/providers/AuthProvider';
 import { usePrefs } from '@/providers/PreferencesProvider';
 import { space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 /**
- * Owners correct a customer's name and phone. Role is not editable here.
- *
- * Serves both kinds of customer: a walk-in lives in the `customers` document
- * table, an account holder in `profiles`, and the id prefix says which.
+ * Adds a buyer who has no account and never will. The counterpart to the
+ * customers that arrive on their own by signing in — see migration 0006.
  */
-export default function EditCustomer() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const customerId = typeof id === 'string' ? id : '';
-  const walkIn = isWalkIn(customerId);
+export default function NewCustomer() {
   const { t } = usePrefs();
+  const theme = useTheme();
+  const { profile } = useAuth();
   const router = useRouter();
-
-  const { data } = useLoader(
-    useCallback(async (): Promise<{ name: string; phone: string } | null> => {
-      if (walkIn) {
-        const customer = await getCustomer(customerId);
-        return customer ? { name: customer.name, phone: customer.phone } : null;
-      }
-      const profile = (await listProfiles()).find((p) => p.id === customerId);
-      return profile ? { name: profile.full_name, phone: profile.phone ?? '' } : null;
-    }, [customerId, walkIn])
-  );
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
-  const [filled, setFilled] = useState(false);
-
-  useEffect(() => {
-    if (!data || filled) return;
-    setName(data.name);
-    setPhone(data.phone);
-    setFilled(true);
-  }, [data, filled]);
 
   const valid = name.trim().length > 0;
 
   const save = async () => {
-    if (!valid) return;
+    if (!valid || !profile) return;
     setBusy(true);
     try {
-      if (walkIn) {
-        await updateCustomer(customerId, { name: name.trim(), phone: phone.trim() });
-      } else {
-        await updateProfile(customerId, {
-          full_name: name.trim(),
-          phone: phone.trim() || null,
-        });
-      }
+      const customer = await createCustomer(
+        { name: name.trim(), phone: phone.trim() },
+        { id: profile.id, name: profile.full_name }
+      );
       haptics.saved();
-      router.back();
+      // You add someone because you are about to sell to them, so land on their
+      // page, where the sale button is. `replace` keeps Back going to the list.
+      router.replace(`/customer/${customer.id}`);
     } catch {
       haptics.failed();
       setBusy(false);
@@ -74,7 +51,7 @@ export default function EditCustomer() {
 
   return (
     <Screen edges={['top', 'left', 'right', 'bottom']} keyboard>
-      <Header title={t('editCustomer')} onBack={() => router.back()} />
+      <Header title={t('newCustomer')} onBack={() => router.back()} />
 
       <FormScroll>
         <Animated.View entering={FadeInDown.duration(320)} style={styles.form}>
@@ -85,6 +62,7 @@ export default function EditCustomer() {
             placeholder={t('fullName')}
             autoCapitalize="words"
             maxLength={60}
+            autoFocus
           />
           <Field
             label={t('phone')}
@@ -94,12 +72,16 @@ export default function EditCustomer() {
             keyboardType="phone-pad"
             maxLength={20}
           />
+
+          <Text variant="caption" color={theme.textDim}>
+            {t('newCustomerHint')}
+          </Text>
         </Animated.View>
       </FormScroll>
 
       <View style={styles.footer}>
         <Button
-          label={busy ? t('saving') : t('saveChanges')}
+          label={busy ? t('saving') : t('save')}
           onPress={save}
           disabled={!valid}
           loading={busy}

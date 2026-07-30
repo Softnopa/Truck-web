@@ -9,9 +9,12 @@ import type {
 import { supabase } from './supabase';
 import {
   docId,
+  isWalkIn,
+  parseCustomer,
   parsePayment,
   parseSale,
   parseTruck,
+  type CustomerDoc,
   type PaymentDoc,
   type SaleDoc,
   type TruckDoc,
@@ -162,6 +165,95 @@ export async function createPayment(saleId: string, amount: number): Promise<voi
   const { error } = await supabase
     .from('payments')
     .insert({ id, payload: { ...doc }, updated_at: now });
+  if (error) throw error;
+}
+
+// --- walk-in customers -------------------------------------------------------
+
+/**
+ * Buyers with no account. Kept separate from `profiles` because those are
+ * keyed to `auth.users` and cannot be created from this app — see migration
+ * 0006. Screens that show "customers" merge both sources.
+ */
+export async function listCustomers(): Promise<CustomerDoc[]> {
+  const { data, error } = await supabase
+    .from('customers')
+    .select('*')
+    .is('deleted_at', null)
+    .order('updated_at', { ascending: false });
+
+  // 42P01 = undefined_table. The customers screen loads this alongside the
+  // profiles it has always shown, so a build deployed before 0006 has been run
+  // would otherwise take the whole screen down rather than just lack walk-ins.
+  // Every other error still throws.
+  if (error) {
+    if (error.code === '42P01') return [];
+    throw error;
+  }
+  return (data ?? []).map(parseCustomer).filter(nonNull);
+}
+
+export async function createCustomer(
+  input: { name: string; phone: string },
+  author: Author
+): Promise<CustomerDoc> {
+  const now = new Date().toISOString();
+  const id = docId('cust');
+  const doc: CustomerDoc = {
+    id,
+    name: input.name,
+    phone: input.phone,
+    createdBy: author.id,
+    createdByName: author.name,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const { error } = await supabase
+    .from('customers')
+    .insert({ id, payload: { ...doc }, updated_at: now });
+  if (error) throw error;
+  // Returned so the caller can go straight to recording a sale against them.
+  return doc;
+}
+
+export async function getCustomer(id: string): Promise<CustomerDoc | null> {
+  const { data } = await supabase.from('customers').select('*').eq('id', id).maybeSingle();
+  return data ? parseCustomer(data) : null;
+}
+
+export async function updateCustomer(
+  id: string,
+  patch: { name: string; phone: string }
+): Promise<void> {
+  const current = await getCustomer(id);
+  if (!current) throw new Error('customer not found');
+  const now = new Date().toISOString();
+  const next: CustomerDoc = { ...current, ...patch, updatedAt: now };
+  const { error } = await supabase
+    .from('customers')
+    .update({ payload: { ...next }, updated_at: now })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * Display name for either kind of customer. Screens that hold only an id — the
+ * sale form, the detail page — should not have to know which table it came
+ * from, so the branch lives here once instead of at each call site.
+ */
+export async function customerName(customerId: string): Promise<string> {
+  if (!customerId) return '';
+  if (isWalkIn(customerId)) return (await getCustomer(customerId))?.name ?? '';
+  const profiles = await listProfiles();
+  return profiles.find((p) => p.id === customerId)?.full_name ?? '';
+}
+
+/** Soft delete, matching trucks — their past sales must stay readable. */
+export async function deleteCustomer(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('customers')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id);
   if (error) throw error;
 }
 
