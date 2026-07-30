@@ -1,3 +1,11 @@
+import {
+  Manrope_400Regular,
+  Manrope_500Medium,
+  Manrope_600SemiBold,
+  Manrope_700Bold,
+  Manrope_800ExtraBold,
+  useFonts,
+} from '@expo-google-fonts/manrope';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect } from 'react';
@@ -5,7 +13,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { PreferencesProvider, usePrefs } from '@/providers/PreferencesProvider';
-import { palette } from '@/theme/tokens';
+import { darkPalette } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 // `void` silences the linter but attaches no rejection handler. expo-splash-screen
 // rejects when the native splash is already gone (common on a Fast Refresh), and
@@ -20,13 +29,15 @@ const CUSTOMER_HOME = '/(customer)';
  * no session -> sign-in, undecided customer -> permissions, otherwise the home
  * for their role. Roles are also enforced by RLS; this only keeps the UI honest.
  */
-function Gate({ children }: { children: React.ReactNode }) {
+function Gate({ children, fontsReady }: { children: React.ReactNode; fontsReady: boolean }) {
   const { loading, session, profile, hasAnswered, isOwner } = useAuth();
   const { ready } = usePrefs();
   const segments = useSegments();
   const router = useRouter();
 
-  const booting = loading || !ready || (Boolean(session) && !profile);
+  // Fonts join the same gate as auth and preferences: holding the splash a
+  // moment longer beats letting the whole app repaint in a fallback face.
+  const booting = loading || !ready || !fontsReady || (Boolean(session) && !profile);
 
   useEffect(() => {
     if (booting) return;
@@ -56,20 +67,20 @@ function Gate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export default function RootLayout() {
+/**
+ * Split out so it sits *inside* PreferencesProvider — `useTheme` reads that
+ * context, and the root view below the provider cannot.
+ */
+function ThemedStack() {
+  const theme = useTheme();
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: palette.bg }}>
-      <SafeAreaProvider>
-        <PreferencesProvider>
-          <AuthProvider>
-            <Gate>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: palette.bg },
-                  animation: 'slide_from_right',
-                }}
-              >
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: theme.bg },
+        animation: 'slide_from_right',
+      }}
+    >
                 <Stack.Screen name="index" />
                 <Stack.Screen name="sign-in" options={{ animation: 'fade' }} />
                 <Stack.Screen name="permissions" options={{ animation: 'fade', gestureEnabled: false }} />
@@ -92,11 +103,36 @@ export default function RootLayout() {
                   name="edit-customer"
                   options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
                 />
-                <Stack.Screen
-                  name="new-client"
-                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-                />
-              </Stack>
+      <Stack.Screen
+        name="new-client"
+        options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+      />
+    </Stack>
+  );
+}
+
+export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    Manrope_400Regular,
+    Manrope_500Medium,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
+    Manrope_800ExtraBold,
+  });
+
+  // A font that fails to load must not hold the app hostage — the ramp falls
+  // back to the system face and everything still works.
+  const fontsReady = fontsLoaded || Boolean(fontError);
+
+  return (
+    // Static dark ground: this sits above the provider, and it is only ever
+    // visible behind the themed screens during a transition.
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: darkPalette.bg }}>
+      <SafeAreaProvider>
+        <PreferencesProvider>
+          <AuthProvider>
+            <Gate fontsReady={fontsReady}>
+              <ThemedStack />
             </Gate>
           </AuthProvider>
         </PreferencesProvider>

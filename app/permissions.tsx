@@ -11,7 +11,8 @@ import { haptics } from '@/lib/haptics';
 import { requestTrackingPermissions } from '@/lib/location';
 import { useAuth } from '@/providers/AuthProvider';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { palette, radius, space } from '@/theme/tokens';
+import { radius, space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 /**
  * Requirement: consent must be explicit, and the app must not be reachable
@@ -20,34 +21,54 @@ import { palette, radius, space } from '@/theme/tokens';
  */
 export default function Permissions() {
   const { t, accentColors } = usePrefs();
+  const theme = useTheme();
   const { saveConsent, consent } = useAuth();
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   // Someone who already answered is here because the terms changed under them.
   const reconsenting = Boolean(consent?.decided_at);
 
   const decide = async (accept: boolean) => {
     setBusy(true);
+    setFailed(false);
     let location = false;
     let notifications = false;
 
-    if (accept) {
-      location = await requestTrackingPermissions();
-      const notif = await Notifications.requestPermissionsAsync();
-      notifications = notif.status === 'granted';
+    try {
+      if (accept) {
+        location = await requestTrackingPermissions();
+
+        // Asked separately: a platform that refuses to answer the notification
+        // prompt must not also cost the user the location answer they just gave.
+        try {
+          const notif = await Notifications.requestPermissionsAsync();
+          notifications = notif.status === 'granted';
+        } catch {
+          notifications = false;
+        }
+      }
+
+      // Recorded with a timestamp whichever way it went — the answer itself is
+      // what unblocks the app.
+      await saveConsent({
+        location_granted: location,
+        notifications_granted: notifications,
+        terms_accepted: true,
+      });
+
+      if (accept && (location || notifications)) haptics.saved();
+      else haptics.tap();
+    } catch {
+      // Saving is the only step that can strand the user here, so it is the one
+      // worth reporting; the permission prompts above already degrade to false.
+      haptics.failed();
+      setFailed(true);
+    } finally {
+      // Whatever happened, this screen must never be left with a dead button —
+      // it is the only way out of the app for a customer who has not answered.
+      setBusy(false);
     }
-
-    // Recorded with a timestamp whichever way it went — the answer itself is
-    // what unblocks the app.
-    await saveConsent({
-      location_granted: location,
-      notifications_granted: notifications,
-      terms_accepted: true,
-    });
-
-    if (accept && (location || notifications)) haptics.saved();
-    else haptics.tap();
-    setBusy(false);
   };
 
   return (
@@ -55,23 +76,23 @@ export default function Permissions() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Animated.View entering={FadeInDown.duration(400)} style={styles.header}>
           <Text variant="display">{t('permTitle')}</Text>
-          <Text variant="body" color={palette.textDim}>
+          <Text variant="body" color={theme.textDim}>
             {t('permSubtitle')}
           </Text>
         </Animated.View>
 
         {reconsenting ? (
           <Animated.View entering={FadeInDown.delay(60).duration(400)}>
-            <Card style={{ backgroundColor: palette.dangerSoft }}>
+            <Card style={{ backgroundColor: theme.dangerSoft }}>
               <View style={styles.rowTop}>
-                <View style={[styles.icon, { backgroundColor: palette.surface }]}>
-                  <Ionicons name="alert-circle-outline" size={20} color={palette.danger} />
+                <View style={[styles.icon, { backgroundColor: theme.surface }]}>
+                  <Ionicons name="alert-circle-outline" size={20} color={theme.danger} />
                 </View>
-                <Text variant="heading" color={palette.danger}>
+                <Text variant="heading" color={theme.danger}>
                   {t('permChangedTitle')}
                 </Text>
               </View>
-              <Text variant="body" color={palette.text} style={styles.body}>
+              <Text variant="body" color={theme.text} style={styles.body}>
                 {t('permChangedBody')}
               </Text>
             </Card>
@@ -86,7 +107,7 @@ export default function Permissions() {
               </View>
               <Text variant="heading">{t('permLocationTitle')}</Text>
             </View>
-            <Text variant="body" color={palette.textDim} style={styles.body}>
+            <Text variant="body" color={theme.textDim} style={styles.body}>
               {t('permLocationBody')}
             </Text>
           </Card>
@@ -100,20 +121,25 @@ export default function Permissions() {
               </View>
               <Text variant="heading">{t('permNotifTitle')}</Text>
             </View>
-            <Text variant="body" color={palette.textDim} style={styles.body}>
+            <Text variant="body" color={theme.textDim} style={styles.body}>
               {t('permNotifBody')}
             </Text>
           </Card>
         </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(210).duration(400)}>
-          <Text variant="caption" color={palette.textFaint}>
+          <Text variant="caption" color={theme.textFaint}>
             {t('permTerms')}
           </Text>
         </Animated.View>
       </ScrollView>
 
       <Animated.View entering={FadeInDown.delay(260).duration(400)} style={styles.actions}>
+        {failed ? (
+          <Text variant="label" color={theme.danger} center>
+            {t('somethingWrong')}
+          </Text>
+        ) : null}
         <Button
           label={busy ? t('permAsking') : t('permAllow')}
           onPress={() => void decide(true)}
@@ -125,7 +151,7 @@ export default function Permissions() {
           onPress={() => void decide(false)}
           disabled={busy}
         />
-        <Text variant="caption" color={palette.textFaint} center>
+        <Text variant="caption" color={theme.textFaint} center>
           {t('permDeclineNote')}
         </Text>
       </Animated.View>

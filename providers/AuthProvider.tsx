@@ -137,7 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }) => {
       const userId = session?.user.id;
       if (!userId) return;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('consents')
         .upsert(
           {
@@ -151,6 +151,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         )
         .select()
         .maybeSingle();
+
+      // Must throw, not swallow: this write is what releases the customer from
+      // the permissions gate, so a silent failure strands them on that screen
+      // pressing a button that appears to do nothing.
+      if (error) throw error;
       if (data) setConsent(data);
     },
     [session?.user.id]
@@ -161,7 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (revoked: boolean) => {
       const userId = session?.user.id;
       if (!userId) return;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('consents')
         .update({
           location_granted: !revoked,
@@ -170,6 +175,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('user_id', userId)
         .select()
         .maybeSingle();
+      if (error) throw error;
       if (data) setConsent(data);
     },
     [session?.user.id]

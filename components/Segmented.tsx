@@ -4,8 +4,9 @@ import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated'
 import { PressableScale } from '@/components/Button';
 import { Text } from '@/components/Text';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { HIT, palette, space } from '@/theme/tokens';
+import { HIT, space } from '@/theme/tokens';
 import { useSkin } from '@/theme/useSkin';
+import { useTheme } from '@/theme/useTheme';
 
 export interface SegmentOption<T extends string | number> {
   value: T;
@@ -22,6 +23,7 @@ interface Props<T extends string | number> {
 export function Segmented<T extends string | number>({ options, value, onChange }: Props<T>) {
   const { accentColors } = usePrefs();
   const { radius, spring } = useSkin();
+  const theme = useTheme();
   const [width, setWidth] = useState(0);
 
   const index = Math.max(
@@ -37,7 +39,10 @@ export function Segmented<T extends string | number>({ options, value, onChange 
 
   return (
     <View
-      style={[styles.track, { borderRadius: radius.md }]}
+      style={[
+        styles.track,
+        { borderRadius: radius.md, backgroundColor: theme.surface, borderColor: theme.border },
+      ]}
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
       accessibilityRole="tablist"
     >
@@ -61,7 +66,7 @@ export function Segmented<T extends string | number>({ options, value, onChange 
             accessibilityLabel={option.label}
             style={styles.segment}
           >
-            <Text variant="label" color={active ? accentColors.on : palette.textDim} center>
+            <Text variant="label" color={active ? accentColors.on : theme.textDim} center>
               {option.label}
             </Text>
           </PressableScale>
@@ -76,9 +81,7 @@ const PAD = 3;
 const styles = StyleSheet.create({
   track: {
     flexDirection: 'row',
-    backgroundColor: palette.surface,
     borderWidth: 1,
-    borderColor: palette.border,
     padding: PAD,
     minHeight: HIT,
   },

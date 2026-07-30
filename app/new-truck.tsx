@@ -14,7 +14,7 @@ import { blankIfZero, formatPlate, parseAmount } from '@/lib/format';
 import { haptics } from '@/lib/haptics';
 import { useAuth } from '@/providers/AuthProvider';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { palette, radius, space } from '@/theme/tokens';
+import { radius, space } from '@/theme/tokens';
 
 /**
  * Four inputs. The old form had ten plus three custom fields; arrival date is
@@ -135,5 +135,5 @@ const styles = StyleSheet.create({
     padding: space.base,
     gap: space.xs,
   },
-  footer: { paddingTop: space.md, borderTopColor: palette.border },
+  footer: { paddingTop: space.md },
 });

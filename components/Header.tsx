@@ -2,9 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 import { PressableScale } from '@/components/Button';
 import { Text } from '@/components/Text';
+import { useClock } from '@/lib/useClock';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { HIT, palette, space } from '@/theme/tokens';
+import { HIT, space } from '@/theme/tokens';
 import { useSkin } from '@/theme/useSkin';
+import { useTheme } from '@/theme/useTheme';
 
 interface Props {
   title: string;
@@ -27,8 +29,14 @@ export function Header({
   onBack,
   onTitlePress,
 }: Props) {
-  const { accentColors } = usePrefs();
+  const { accentColors, lang } = usePrefs();
   const { radius } = useSkin();
+  const theme = useTheme();
+  const clock = useClock(lang);
+
+  // Only the screens you land on, never the ones you drill into: a back button
+  // means this is a task in progress, where a clock is noise.
+  const showClock = !onBack;
 
   const titles = (
     <View style={styles.titles}>
@@ -37,11 +45,11 @@ export function Header({
           {title}
         </Text>
         {onTitlePress ? (
-          <Ionicons name="create-outline" size={18} color={palette.textFaint} />
+          <Ionicons name="create-outline" size={18} color={theme.textFaint} />
         ) : null}
       </View>
       {subtitle ? (
-        <Text variant="label" color={palette.textDim} numberOfLines={1}>
+        <Text variant="label" color={theme.textDim} numberOfLines={1}>
           {subtitle}
         </Text>
       ) : null}
@@ -52,7 +60,7 @@ export function Header({
     <View style={styles.wrap}>
       {onBack ? (
         <PressableScale onPress={onBack} to={0.9} style={styles.back} accessibilityLabel={title}>
-          <Ionicons name="chevron-back" size={24} color={palette.text} />
+          <Ionicons name="chevron-back" size={24} color={theme.text} />
         </PressableScale>
       ) : null}
 
@@ -63,6 +71,12 @@ export function Header({
       ) : (
         titles
       )}
+
+      {showClock ? (
+        <Text variant="label" numeric color={theme.textDim}>
+          {clock}
+        </Text>
+      ) : null}
 
       {actionIcon && onAction ? (
         <PressableScale

@@ -31,7 +31,8 @@ import { saleTotal, type SaleDoc } from '@/lib/types';
 import { useLoader } from '@/lib/useLoader';
 import { useAuth } from '@/providers/AuthProvider';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { palette, radius, space } from '@/theme/tokens';
+import { radius, space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 interface Detail {
   name: string;
@@ -65,6 +66,7 @@ export default function CustomerDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const customerId = typeof id === 'string' ? id : '';
   const { t, lang, accentColors } = usePrefs();
+  const theme = useTheme();
   const { profile } = useAuth();
   const router = useRouter();
 
@@ -182,18 +184,18 @@ export default function CustomerDetail() {
           style={[
             styles.warnBanner,
             {
-              backgroundColor: warnState === 'located' ? accentColors.soft : palette.dangerSoft,
+              backgroundColor: warnState === 'located' ? accentColors.soft : theme.dangerSoft,
             },
           ]}
         >
           <Ionicons
             name={warnState === 'located' ? 'location' : 'alert-circle'}
             size={18}
-            color={warnState === 'located' ? accentColors.base : palette.danger}
+            color={warnState === 'located' ? accentColors.base : theme.danger}
           />
           <Text
             variant="label"
-            color={warnState === 'located' ? accentColors.base : palette.danger}
+            color={warnState === 'located' ? accentColors.base : theme.danger}
             style={styles.warnText}
           >
             {warnLabel[warnState]}
@@ -231,14 +233,14 @@ export default function CustomerDetail() {
               <Card>
                 {/* Requirement 7: the owner who created the sale, at the top. */}
                 <View style={styles.author}>
-                  <Ionicons name="person-circle-outline" size={16} color={palette.textFaint} />
-                  <Text variant="caption" color={palette.textFaint}>
+                  <Ionicons name="person-circle-outline" size={16} color={theme.textFaint} />
+                  <Text variant="caption" color={theme.textFaint}>
                     {item.createdByName
                       ? t('addedBy', { name: item.createdByName })
                       : t('unassigned')}
                   </Text>
                   <View style={styles.spacer} />
-                  <Text variant="caption" color={palette.textFaint}>
+                  <Text variant="caption" color={theme.textFaint}>
                     {formatDate(item.createdAt, lang)}
                   </Text>
                 </View>
@@ -247,12 +249,12 @@ export default function CustomerDetail() {
                   <Text variant="heading">{displayFruit(item.fruit, t) || t('none')}</Text>
                   <Badge
                     label={settled ? t('settled') : t('owes')}
-                    color={settled ? palette.success : palette.warning}
+                    color={settled ? theme.success : theme.warning}
                     soft={settled ? 'rgba(18,183,106,0.14)' : 'rgba(247,144,9,0.14)'}
                   />
                 </View>
 
-                <Text variant="label" color={palette.textDim} numeric style={styles.breakdown}>
+                <Text variant="label" color={theme.textDim} numeric style={styles.breakdown}>
                   {num(item.boxes)} × {num(item.pricePerBox)} {t('soum')}
                 </Text>
 
@@ -262,7 +264,7 @@ export default function CustomerDetail() {
                   <Money
                     label={t('remaining')}
                     value={remaining}
-                    color={settled ? palette.textFaint : palette.warning}
+                    color={settled ? theme.textFaint : theme.warning}
                   />
                 </View>
 
@@ -318,13 +320,14 @@ export default function CustomerDetail() {
 }
 
 function Money({ label, value, color }: { label: string; value: number; color?: string }) {
+  const theme = useTheme();
   const shown = blankIfZero(value);
   return (
     <View style={styles.moneyCell}>
-      <Text variant="caption" color={palette.textFaint}>
+      <Text variant="caption" color={theme.textFaint}>
         {label}
       </Text>
-      <Text variant="label" numeric color={color ?? palette.text}>
+      <Text variant="label" numeric color={color ?? theme.text}>
         {shown ?? '—'}
       </Text>
     </View>

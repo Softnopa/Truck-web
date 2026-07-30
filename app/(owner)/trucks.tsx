@@ -17,11 +17,13 @@ import { truckRemaining, truckValue, type TruckDoc } from '@/lib/types';
 import { useLoader } from '@/lib/useLoader';
 import { useRealtime } from '@/lib/useRealtime';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { fruitEmoji, palette, space } from '@/theme/tokens';
+import { fruitEmoji, space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 import { useSkin } from '@/theme/useSkin';
 
 export default function Trucks() {
   const { t, accentColors } = usePrefs();
+  const theme = useTheme();
   const { fun } = useSkin();
   const router = useRouter();
   const { data, loading, reload } = useLoader(useCallback(() => listTrucks(), []));
@@ -95,8 +97,8 @@ export default function Trucks() {
                           ? t('boxesLeft', { n: num(remaining) })
                           : t('boxesSold', { n: num(item.boxesSold) })
                       }
-                      color={remaining > 0 ? accentColors.base : palette.textDim}
-                      soft={remaining > 0 ? accentColors.soft : palette.surfaceHi}
+                      color={remaining > 0 ? accentColors.base : theme.textDim}
+                      soft={remaining > 0 ? accentColors.soft : theme.surfaceHi}
                     />
                   </View>
 
@@ -104,9 +106,9 @@ export default function Trucks() {
                     {fun ? (
                       <Text variant="body">{fruitEmoji(item.fruit)}</Text>
                     ) : (
-                      <Ionicons name="nutrition-outline" size={16} color={palette.textFaint} />
+                      <Ionicons name="nutrition-outline" size={16} color={theme.textFaint} />
                     )}
-                    <Text variant="label" color={palette.textDim}>
+                    <Text variant="label" color={theme.textDim}>
                       {displayFruit(item.fruit, t) || t('none')}
                     </Text>
                   </View>
@@ -114,14 +116,14 @@ export default function Trucks() {
                   {value ? (
                     <Text variant="numeric" numeric style={styles.value}>
                       {value}{' '}
-                      <Text variant="label" color={palette.textFaint}>
+                      <Text variant="label" color={theme.textFaint}>
                         {t('soum')}
                       </Text>
                     </Text>
                   ) : null}
 
                   {item.createdByName ? (
-                    <Text variant="caption" color={palette.textFaint} style={styles.author}>
+                    <Text variant="caption" color={theme.textFaint} style={styles.author}>
                       {t('addedBy', { name: item.createdByName })}
                     </Text>
                   ) : null}

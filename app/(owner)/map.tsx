@@ -15,7 +15,8 @@ import { formatDateTime } from '@/lib/format';
 import { useLoader } from '@/lib/useLoader';
 import { useRealtime } from '@/lib/useRealtime';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { palette, radius, space } from '@/theme/tokens';
+import { radius, space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 async function loadPins(): Promise<Pin[]> {
   const [locations, profiles] = await Promise.all([listCustomerLocations(), listProfiles()]);
@@ -42,6 +43,7 @@ const INITIAL_REGION = {
 // Not named `Map`: that would shadow the global constructor used in loadPins.
 export default function CustomerMap() {
   const { t, lang, accentColors } = usePrefs();
+  const theme = useTheme();
   const { data, loading, reload } = useLoader(useCallback(loadPins, []));
   const [query, setQuery] = useState('');
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -96,7 +98,7 @@ export default function CustomerMap() {
             <Animated.View entering={FadeIn.duration(220)} style={styles.callout}>
               <Card>
                 <Text variant="heading">{t('noMatches')}</Text>
-                <Text variant="label" color={palette.textDim}>
+                <Text variant="label" color={theme.textDim}>
                   {t('noMatchesHint')}
                 </Text>
               </Card>
@@ -128,13 +130,13 @@ export default function CustomerMap() {
                           <Ionicons
                             name="location"
                             size={14}
-                            color={active ? accentColors.base : palette.textFaint}
+                            color={active ? accentColors.base : theme.textFaint}
                           />
                           <Text variant="heading" numberOfLines={1} style={styles.cardName}>
                             {item.name || t('none')}
                           </Text>
                         </View>
-                        <Text variant="caption" color={palette.textFaint}>
+                        <Text variant="caption" color={theme.textFaint}>
                           {formatDateTime(item.updatedAt, lang)}
                         </Text>
                       </Card>

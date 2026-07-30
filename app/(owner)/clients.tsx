@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, FlatList, Share, StyleSheet, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { PressableScale } from '@/components/Button';
 import { Avatar, Card } from '@/components/Card';
@@ -14,21 +14,26 @@ import { Text } from '@/components/Text';
 import { deleteClient, listClients, sendTelegramMessage } from '@/lib/api';
 import type { ClientRow } from '@/lib/database.types';
 import { haptics } from '@/lib/haptics';
+import { shareOrCopy } from '@/lib/share';
 import { initials } from '@/lib/format';
 import { useLoader } from '@/lib/useLoader';
 import { useRealtime } from '@/lib/useRealtime';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { palette, space } from '@/theme/tokens';
+import { space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 const BOT_USERNAME = process.env.EXPO_PUBLIC_TELEGRAM_BOT_USERNAME;
 
 export default function Clients() {
   const { t, accentColors } = usePrefs();
+  const theme = useTheme();
   const router = useRouter();
   const { data, loading, reload } = useLoader(useCallback(() => listClients(), []));
   const [composing, setComposing] = useState<ClientRow | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   useRealtime('clients', ['clients'], reload);
 
@@ -38,7 +43,14 @@ export default function Clients() {
     if (!BOT_USERNAME) return;
     const link = `https://t.me/${BOT_USERNAME}?start=${client.invite_code}`;
     haptics.tap();
-    void Share.share({ message: t('inviteMessage', { link }) });
+    void (async () => {
+      const how = await shareOrCopy(t('inviteMessage', { link }));
+      // The share sheet does not exist on desktop web, so say plainly where the
+      // link went instead of appearing to do nothing.
+      setNotice(how === 'failed' ? t('somethingWrong') : how === 'copied' ? t('linkCopied') : null);
+      if (how === 'failed') haptics.failed();
+      else haptics.saved();
+    })();
   };
 
   const openCompose = (client: ClientRow) => {
@@ -50,13 +62,17 @@ export default function Clients() {
   const send = async () => {
     if (!composing || !draft.trim()) return;
     setSending(true);
+    setSendError(null);
     try {
       await sendTelegramMessage(composing.id, draft.trim());
       haptics.saved();
       setComposing(null);
+      setNotice(t('messageSent'));
     } catch {
+      // Shown inside the sheet: Alert.alert is a no-op on web, so a failure here
+      // used to look exactly like nothing happening.
       haptics.failed();
-      Alert.alert(t('messageFailed'));
+      setSendError(t('messageFailed'));
     } finally {
       setSending(false);
     }
@@ -89,6 +105,20 @@ export default function Clients() {
         onAction={() => router.push('/new-client')}
       />
 
+      {notice ? (
+        <Animated.View entering={FadeInDown.duration(220)}>
+          <PressableScale onPress={() => setNotice(null)} to={0.99} accessibilityLabel={notice}>
+            <View style={[styles.notice, { backgroundColor: accentColors.soft }]}>
+              <Ionicons name="checkmark-circle" size={16} color={accentColors.base} />
+              <Text variant="label" color={accentColors.base} style={styles.noticeText}>
+                {notice}
+              </Text>
+              <Ionicons name="close" size={14} color={accentColors.base} />
+            </View>
+          </PressableScale>
+        </Animated.View>
+      ) : null}
+
       <FlatList
         data={clients}
         keyExtractor={(item) => item.id}
@@ -117,7 +147,7 @@ export default function Clients() {
                         {item.name || t('none')}
                       </Text>
                       {item.phone ? (
-                        <Text variant="label" color={palette.textDim} numeric>
+                        <Text variant="label" color={theme.textDim} numeric>
                           {item.phone}
                         </Text>
                       ) : null}
@@ -125,9 +155,9 @@ export default function Clients() {
                         <Ionicons
                           name={linked ? 'paper-plane' : 'paper-plane-outline'}
                           size={13}
-                          color={linked ? accentColors.base : palette.textFaint}
+                          color={linked ? accentColors.base : theme.textFaint}
                         />
-                        <Text variant="caption" color={linked ? accentColors.base : palette.textFaint}>
+                        <Text variant="caption" color={linked ? accentColors.base : theme.textFaint}>
                           {linked ? t('telegramLinked') : t('telegramNotLinked')}
                         </Text>
                       </View>
@@ -166,6 +196,11 @@ export default function Clients() {
           maxLength={500}
           autoFocus
         />
+        {sendError ? (
+          <Text variant="label" color={theme.danger}>
+            {sendError}
+          </Text>
+        ) : null}
         <PressableScale
           onPress={() => void send()}
           disabled={!draft.trim() || sending}
@@ -183,6 +218,16 @@ export default function Clients() {
 }
 
 const styles = StyleSheet.create({
+  notice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingHorizontal: space.base,
+    paddingVertical: space.md,
+    borderRadius: 12,
+    marginBottom: space.md,
+  },
+  noticeText: { flex: 1 },
   list: { gap: space.md, paddingBottom: space.xxl },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   identity: { flex: 1, gap: 2 },

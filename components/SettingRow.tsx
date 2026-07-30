@@ -2,7 +2,8 @@ import React from 'react';
 import { StyleSheet, Switch, View } from 'react-native';
 import { Text } from '@/components/Text';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { HIT, palette, space } from '@/theme/tokens';
+import { HIT, space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 /** Label + description on the left, any control on the right. */
 export function SettingRow({
@@ -14,12 +15,13 @@ export function SettingRow({
   description?: string;
   children?: React.ReactNode;
 }) {
+  const theme = useTheme();
   return (
     <View style={styles.row}>
       <View style={styles.text}>
         <Text variant="body">{label}</Text>
         {description ? (
-          <Text variant="caption" color={palette.textFaint}>
+          <Text variant="caption" color={theme.textFaint}>
             {description}
           </Text>
         ) : null}
@@ -43,15 +45,16 @@ export function ToggleRow({
   disabled?: boolean;
 }) {
   const { accentColors } = usePrefs();
+  const theme = useTheme();
   return (
     <SettingRow label={label} description={description}>
       <Switch
         value={value}
         onValueChange={onChange}
         disabled={disabled}
-        trackColor={{ false: palette.borderHi, true: accentColors.base }}
+        trackColor={{ false: theme.borderHi, true: accentColors.base }}
         thumbColor="#FFFFFF"
-        ios_backgroundColor={palette.borderHi}
+        ios_backgroundColor={theme.borderHi}
       />
     </SettingRow>
   );

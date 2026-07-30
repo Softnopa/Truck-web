@@ -115,6 +115,7 @@ const en = {
   messageFailed: 'Could not send. They may not be connected on Telegram yet.',
   deleteClient: 'Delete client',
   deleteClientConfirm: 'This client and their invite link will be removed.',
+  linkCopied: 'Invite link copied — paste it to your client',
 
   // Warn
   warn: 'Warn',
@@ -186,6 +187,7 @@ const en = {
   noDebtors: 'Everyone has paid',
   noDebtorsHint: 'Customers with an unpaid balance appear here.',
   lastSale: 'Last sale',
+  owesCount: '{n} customers owe money',
 
   // Editing
   editTruck: 'Edit truck',
@@ -194,6 +196,12 @@ const en = {
   changesSaved: 'Saved',
   fullName: 'Name',
   phone: 'Phone',
+
+  theme: 'Theme',
+  themeDark: 'Dark',
+  themeLight: 'Light',
+  themeSystem: 'Auto',
+  themeHint: 'Auto follows your phone’s own light or dark setting.',
 
   // Fun / Calm skin
   skin: 'Look',
@@ -310,6 +318,7 @@ const ru: Record<StringKey, string> = {
   messageFailed: 'Не удалось отправить. Возможно, контакт ещё не подключён в Telegram.',
   deleteClient: 'Удалить контакт',
   deleteClientConfirm: 'Контакт и его ссылка-приглашение будут удалены.',
+  linkCopied: 'Ссылка скопирована — отправьте её клиенту',
 
   warn: 'Предупредить',
   warnTitle: 'Отправить предупреждение?',
@@ -376,6 +385,7 @@ const ru: Record<StringKey, string> = {
   noDebtors: 'Все расплатились',
   noDebtorsHint: 'Здесь появятся клиенты с непогашенным долгом.',
   lastSale: 'Последняя продажа',
+  owesCount: 'должников: {n}',
 
   editTruck: 'Изменить фуру',
   editCustomer: 'Изменить клиента',
@@ -384,6 +394,11 @@ const ru: Record<StringKey, string> = {
   fullName: 'Имя',
   phone: 'Телефон',
 
+  theme: 'Тема',
+  themeDark: 'Тёмная',
+  themeLight: 'Светлая',
+  themeSystem: 'Авто',
+  themeHint: 'Авто следует настройке светлой или тёмной темы на телефоне.',
   skin: 'Вид',
   skinFun: 'Яркий',
   skinCalm: 'Спокойный',
@@ -495,6 +510,7 @@ const uz: Record<StringKey, string> = {
   messageFailed: "Yuborib bo'lmadi. Ehtimol, kontakt hali Telegramda ulanmagan.",
   deleteClient: "Kontaktni o'chirish",
   deleteClientConfirm: "Kontakt va uning taklif havolasi o'chiriladi.",
+  linkCopied: "Havola nusxalandi — mijozingizga yuboring",
 
   warn: 'Ogohlantirish',
   warnTitle: 'Ogohlantirish yuborilsinmi?',
@@ -561,6 +577,7 @@ const uz: Record<StringKey, string> = {
   noDebtors: "Hamma to'lagan",
   noDebtorsHint: "To'lanmagan qarzi bor mijozlar shu yerda chiqadi.",
   lastSale: "Oxirgi sotuv",
+  owesCount: "{n} ta mijozda qarz bor",
 
   editTruck: 'Yukni tahrirlash',
   editCustomer: 'Mijozni tahrirlash',
@@ -569,6 +586,11 @@ const uz: Record<StringKey, string> = {
   fullName: 'Ism',
   phone: 'Telefon',
 
+  theme: 'Mavzu',
+  themeDark: 'Tungi',
+  themeLight: 'Kunduzgi',
+  themeSystem: 'Avto',
+  themeHint: 'Avto telefoningizdagi yorug‘ yoki tungi sozlamaga ergashadi.',
   skin: "Ko'rinish",
   skinFun: 'Yorqin',
   skinCalm: 'Sokin',

@@ -14,12 +14,14 @@ import { blankIfZero, formatPlate, num, parseAmount } from '@/lib/format';
 import { haptics } from '@/lib/haptics';
 import { useLoader } from '@/lib/useLoader';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { palette, radius, space } from '@/theme/tokens';
+import { radius, space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 export default function EditTruck() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const truckId = typeof id === 'string' ? id : '';
   const { t, accentColors } = usePrefs();
+  const theme = useTheme();
   const router = useRouter();
 
   const { data } = useLoader(useCallback(() => getTruck(truckId), [truckId]));
@@ -109,7 +111,7 @@ export default function EditTruck() {
           </View>
 
           {sold > 0 ? (
-            <Text variant="caption" color={palette.textFaint}>
+            <Text variant="caption" color={theme.textFaint}>
               {t('boxesSold', { n: num(sold) })}
             </Text>
           ) : null}

@@ -5,8 +5,9 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { Text } from '@/components/Text';
 import { haptics } from '@/lib/haptics';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { HIT, elevation, palette, space } from '@/theme/tokens';
+import { HIT, space } from '@/theme/tokens';
 import { useSkin } from '@/theme/useSkin';
+import { useElevation, useTheme } from '@/theme/useTheme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -92,17 +93,19 @@ export function Button({
 }: ButtonProps) {
   const { accentColors } = usePrefs();
   const { fun, radius } = useSkin();
+  const theme = useTheme();
+  const elevation = useElevation();
 
   const labelColor =
-    variant === 'primary' ? accentColors.on : variant === 'danger' ? '#FFF5F4' : palette.text;
+    variant === 'primary' ? accentColors.on : variant === 'danger' ? '#FFF5F4' : theme.text;
 
   const surface: ViewStyle =
     variant === 'primary'
       ? { backgroundColor: accentColors.base, ...elevation.card }
       : variant === 'danger'
-        ? { backgroundColor: palette.danger, ...elevation.card }
+        ? { backgroundColor: theme.danger, ...elevation.card }
         : variant === 'secondary'
-          ? { backgroundColor: palette.surfaceHi, borderWidth: 1, borderColor: palette.border }
+          ? { backgroundColor: theme.surfaceHi, borderWidth: 1, borderColor: theme.border }
           : { backgroundColor: 'transparent' };
 
   const body = (
@@ -134,7 +137,7 @@ export function Button({
         <LinearGradient
           colors={
             variant === 'danger'
-              ? [palette.danger, '#B42318']
+              ? [theme.danger, '#B42318']
               : [accentColors.base, accentColors.base + 'B3']
           }
           start={{ x: 0, y: 0 }}

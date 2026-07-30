@@ -14,14 +14,16 @@ import { haptics } from '@/lib/haptics';
 import { requestTrackingPermissions } from '@/lib/location';
 import { useAuth } from '@/providers/AuthProvider';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { ACCENTS, palette, space } from '@/theme/tokens';
+import { ACCENTS, space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 /**
  * Limited by design: a customer picks their own language, but appearance is
  * owner-controlled. Consent stays revocable here for the life of the account.
  */
 export default function CustomerSettings() {
-  const { t, lang, accent, textScale, fun, setLanguage, setFun } = usePrefs();
+  const { t, lang, accent, textScale, fun, theme: themeMode, setLanguage, setFun, setTheme } = usePrefs();
+  const theme = useTheme();
   const { profile, consent, signOut, revokeLocation } = useAuth();
   const [busy, setBusy] = useState(false);
 
@@ -35,19 +37,24 @@ export default function CustomerSettings() {
 
   const toggleSharing = async (next: boolean) => {
     setBusy(true);
-    if (next) {
-      // Re-granting needs the OS permissions back as well as the DB flag, and
-      // background is what actually makes continuous sharing work.
-      const granted = await requestTrackingPermissions();
-      if (!granted) {
-        haptics.failed();
-        setBusy(false);
-        return;
+    try {
+      if (next) {
+        // Re-granting needs the OS permissions back as well as the DB flag, and
+        // background is what actually makes continuous sharing work.
+        const granted = await requestTrackingPermissions();
+        if (!granted) {
+          haptics.failed();
+          return;
+        }
       }
+      await revokeLocation(!next);
+      haptics.saved();
+    } catch {
+      haptics.failed();
+    } finally {
+      // A failed write must leave the switch usable, not permanently disabled.
+      setBusy(false);
     }
-    await revokeLocation(!next);
-    haptics.saved();
-    setBusy(false);
   };
 
   return (
@@ -91,7 +98,20 @@ export default function CustomerSettings() {
         <Animated.View entering={FadeInDown.delay(150).duration(320)}>
           <SectionHeader title={t('appearance')} />
           <Card>
-            {/* The skin is personal to this device, so customers get it too. */}
+            {/* Theme and skin are personal to this device, so customers get both
+                even though accent and text size stay owner-controlled. */}
+            <SettingBlock label={t('theme')}>
+              <Segmented
+                options={[
+                  { value: 'light' as const, label: t('themeLight') },
+                  { value: 'system' as const, label: t('themeSystem') },
+                  { value: 'dark' as const, label: t('themeDark') },
+                ]}
+                value={themeMode}
+                onChange={(next) => void setTheme(next)}
+              />
+            </SettingBlock>
+            <Divider />
             <SettingBlock label={t('skin')}>
               <Segmented
                 options={[
@@ -112,7 +132,7 @@ export default function CustomerSettings() {
             <Divider />
             <SettingRow label={t('textSize')} description={`${Math.round(textScale * 100)}%`} />
             <Divider />
-            <Text variant="caption" color={palette.textFaint}>
+            <Text variant="caption" color={theme.textFaint}>
               {t('customerSettingsNote')}
             </Text>
           </Card>

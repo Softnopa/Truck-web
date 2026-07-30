@@ -4,7 +4,8 @@ import { Field } from '@/components/Field';
 import { Text } from '@/components/Text';
 import { FRUITS, fruitLabelKey } from '@/lib/fruits';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { palette, radius, space } from '@/theme/tokens';
+import { radius, space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 /**
  * One input, not a 47-row dropdown: tap a chip for the common case, type for
@@ -12,6 +13,7 @@ import { palette, radius, space } from '@/theme/tokens';
  */
 export function FruitPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const { t, accentColors } = usePrefs();
+  const theme = useTheme();
   const current = value.trim().toLowerCase();
 
   return (
@@ -42,12 +44,12 @@ export function FruitPicker({ value, onChange }: { value: string; onChange: (v: 
               style={[
                 styles.chip,
                 {
-                  backgroundColor: active ? accentColors.base : palette.surface,
-                  borderColor: active ? accentColors.base : palette.border,
+                  backgroundColor: active ? accentColors.base : theme.surface,
+                  borderColor: active ? accentColors.base : theme.border,
                 },
               ]}
             >
-              <Text variant="label" color={active ? accentColors.on : palette.textDim}>
+              <Text variant="label" color={active ? accentColors.on : theme.textDim}>
                 {t(fruitLabelKey(fruit))}
               </Text>
             </PressableScale>

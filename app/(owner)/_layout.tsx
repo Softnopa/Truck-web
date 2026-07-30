@@ -2,20 +2,22 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { StyleSheet } from 'react-native';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { palette, typeStyle } from '@/theme/tokens';
+import { typeStyle } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 export default function OwnerLayout() {
   const { t, accentColors, textScale } = usePrefs();
+  const theme = useTheme();
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: accentColors.base,
-        tabBarInactiveTintColor: palette.textFaint,
-        tabBarStyle: styles.bar,
+        tabBarInactiveTintColor: theme.textFaint,
+        tabBarStyle: [styles.bar, { backgroundColor: theme.surface, borderTopColor: theme.border }],
         tabBarLabelStyle: typeStyle('caption', Math.min(textScale, 1.15)),
-        sceneStyle: { backgroundColor: palette.bg },
+        sceneStyle: { backgroundColor: theme.bg },
       }}
     >
       <Tabs.Screen
@@ -61,8 +63,6 @@ export default function OwnerLayout() {
 
 const styles = StyleSheet.create({
   bar: {
-    backgroundColor: palette.surface,
-    borderTopColor: palette.border,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

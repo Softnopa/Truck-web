@@ -11,13 +11,15 @@ import { Text } from '@/components/Text';
 import { LANGUAGES, LANGUAGE_LABEL } from '@/i18n/strings';
 import { useAuth } from '@/providers/AuthProvider';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { TEXT_SCALES, palette, space } from '@/theme/tokens';
+import { TEXT_SCALES, space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 /** Owner-only customization. Every value is persisted per user in Supabase. */
 export default function OwnerSettings() {
-  const { t, lang, accent, textScale, fun, setLanguage, setAccent, setTextScale, setFun } =
+  const { t, lang, accent, textScale, fun, theme: themeMode, setLanguage, setAccent, setTextScale, setFun, setTheme } =
     usePrefs();
   const { profile, signOut } = useAuth();
+  const theme = useTheme();
 
   return (
     <Screen edges={['top', 'left', 'right']}>
@@ -37,6 +39,23 @@ export default function OwnerSettings() {
 
             <Divider />
 
+            <SettingBlock label={t('theme')}>
+              <Segmented
+                options={[
+                  { value: 'light' as const, label: t('themeLight') },
+                  { value: 'system' as const, label: t('themeSystem') },
+                  { value: 'dark' as const, label: t('themeDark') },
+                ]}
+                value={themeMode}
+                onChange={(next) => void setTheme(next)}
+              />
+              <Text variant="caption" color={theme.textFaint}>
+                {t('themeHint')}
+              </Text>
+            </SettingBlock>
+
+            <Divider />
+
             <SettingBlock label={t('skin')}>
               <Segmented
                 options={[
@@ -46,7 +65,7 @@ export default function OwnerSettings() {
                 value={fun ? 1 : 0}
                 onChange={(next) => void setFun(next === 1)}
               />
-              <Text variant="caption" color={palette.textFaint}>
+              <Text variant="caption" color={theme.textFaint}>
                 {t('skinHint')}
               </Text>
             </SettingBlock>
@@ -65,7 +84,7 @@ export default function OwnerSettings() {
                 value={textScale}
                 onChange={(next) => void setTextScale(next)}
               />
-              <Text variant="body" color={palette.textDim}>
+              <Text variant="body" color={theme.textDim}>
                 {t('textSizeSample')}
               </Text>
             </SettingBlock>

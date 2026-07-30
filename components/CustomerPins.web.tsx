@@ -3,7 +3,8 @@ import { Card } from '@/components/Card';
 import { Text } from '@/components/Text';
 import type { Lang } from '@/i18n/strings';
 import { formatDateTime } from '@/lib/format';
-import { palette, space } from '@/theme/tokens';
+import { space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 export interface Pin {
   userId: string;
@@ -28,9 +29,10 @@ interface Props {
  * pins as coordinates instead of silently showing a blank box.
  */
 export function CustomerPins({ pins, accent, lang }: Props) {
+  const theme = useTheme();
   return (
     <ScrollView contentContainerStyle={styles.wrap}>
-      <Text variant="caption" color={palette.textFaint} style={styles.notice}>
+      <Text variant="caption" color={theme.textFaint} style={styles.notice}>
         Map view needs a phone or simulator — showing locations as a list here.
       </Text>
       {pins.map((pin) => (
@@ -38,10 +40,10 @@ export function CustomerPins({ pins, accent, lang }: Props) {
           <View style={[styles.dot, { backgroundColor: accent }]} />
           <View style={styles.pinBody}>
             <Text variant="heading">{pin.name || '—'}</Text>
-            <Text variant="caption" color={palette.textFaint}>
+            <Text variant="caption" color={theme.textFaint}>
               {formatDateTime(pin.updatedAt, lang)}
             </Text>
-            <Text variant="caption" color={palette.textFaint} numeric>
+            <Text variant="caption" color={theme.textFaint} numeric>
               {pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}
             </Text>
           </View>

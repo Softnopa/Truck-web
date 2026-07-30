@@ -51,18 +51,40 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
   }
 });
 
-/** Both foreground and background grants are required; either alone is useless here. */
+/**
+ * Both foreground and background grants are required; either alone is useless
+ * here.
+ *
+ * Always resolves — never rejects. A refusal and a platform that cannot even be
+ * asked mean the same thing to every caller ("not sharing"), and the consent
+ * screen has to be able to record an answer either way. On web the permission
+ * APIs throw outright rather than returning a denial, which previously left
+ * that screen stuck mid-submit.
+ */
 export async function requestTrackingPermissions(): Promise<boolean> {
-  const foreground = await Location.requestForegroundPermissionsAsync();
-  if (foreground.status !== 'granted') return false;
-  const background = await Location.requestBackgroundPermissionsAsync();
-  return background.status === 'granted';
+  try {
+    const foreground = await Location.requestForegroundPermissionsAsync();
+    if (foreground.status !== 'granted') return false;
+
+    // Continuous background location is a native capability. The browser has no
+    // equivalent, so claiming it was granted there would put a customer on the
+    // owner's map who can never actually report a position.
+    if (Platform.OS === 'web') return false;
+
+    const background = await Location.requestBackgroundPermissionsAsync();
+    return background.status === 'granted';
+  } catch {
+    return false;
+  }
 }
 
 export async function startTracking(userId: string): Promise<boolean> {
-  const foreground = await Location.getForegroundPermissionsAsync();
-  const background = await Location.getBackgroundPermissionsAsync();
-  if (foreground.status !== 'granted' || background.status !== 'granted') return false;
+  // The background task runs on a native task runner that has no web counterpart.
+  if (Platform.OS === 'web') return false;
+
+  const foreground = await Location.getForegroundPermissionsAsync().catch(() => null);
+  const background = await Location.getBackgroundPermissionsAsync().catch(() => null);
+  if (foreground?.status !== 'granted' || background?.status !== 'granted') return false;
 
   await AsyncStorage.setItem(USER_KEY, userId);
 

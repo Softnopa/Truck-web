@@ -7,10 +7,12 @@ import { Text } from '@/components/Text';
 import { useWarnResponder } from '@/lib/useWarnResponder';
 import { useAuth } from '@/providers/AuthProvider';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { palette, space, typeStyle } from '@/theme/tokens';
+import { space, typeStyle } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 export default function CustomerLayout() {
   const { t, accentColors, textScale } = usePrefs();
+  const theme = useTheme();
   const { session, consent } = useAuth();
   const insets = useSafeAreaInsets();
 
@@ -18,7 +20,7 @@ export default function CustomerLayout() {
   const sharing = useWarnResponder(session?.user.id, locationAllowed);
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: theme.bg }]}>
       {/* Requirement: a visible indicator whenever location is being shared. */}
       {sharing ? (
         <Animated.View
@@ -37,10 +39,10 @@ export default function CustomerLayout() {
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: accentColors.base,
-          tabBarInactiveTintColor: palette.textFaint,
-          tabBarStyle: styles.bar,
+          tabBarInactiveTintColor: theme.textFaint,
+          tabBarStyle: [styles.bar, { backgroundColor: theme.surface, borderTopColor: theme.border }],
           tabBarLabelStyle: typeStyle('caption', Math.min(textScale, 1.15)),
-          sceneStyle: { backgroundColor: palette.bg },
+          sceneStyle: { backgroundColor: theme.bg },
         }}
       >
         <Tabs.Screen
@@ -63,7 +65,7 @@ export default function CustomerLayout() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: palette.bg },
+  root: { flex: 1 },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -73,8 +75,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.lg,
   },
   bar: {
-    backgroundColor: palette.surface,
-    borderTopColor: palette.border,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

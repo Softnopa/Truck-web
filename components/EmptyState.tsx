@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { Text } from '@/components/Text';
-import { palette, radius, space } from '@/theme/tokens';
+import { radius, space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 /**
  * What a list shows instead of zeros. Every empty surface in the app says what
@@ -17,15 +18,16 @@ export function EmptyState({
   title: string;
   hint: string;
 }) {
+  const theme = useTheme();
   return (
     <Animated.View entering={FadeIn.duration(300)} style={styles.wrap}>
-      <View style={styles.badge}>
-        <Ionicons name={icon} size={26} color={palette.textFaint} />
+      <View style={[styles.badge, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <Ionicons name={icon} size={26} color={theme.textFaint} />
       </View>
       <Text variant="heading" center>
         {title}
       </Text>
-      <Text variant="body" color={palette.textDim} center style={styles.hint}>
+      <Text variant="body" color={theme.textDim} center style={styles.hint}>
         {hint}
       </Text>
     </Animated.View>
@@ -43,9 +45,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: radius.xl,
-    backgroundColor: palette.surface,
     borderWidth: 1,
-    borderColor: palette.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: space.xs,

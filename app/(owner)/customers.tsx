@@ -16,7 +16,8 @@ import { saleTotal } from '@/lib/types';
 import { useLoader } from '@/lib/useLoader';
 import { useRealtime } from '@/lib/useRealtime';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { palette, radius, space } from '@/theme/tokens';
+import { radius, space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 interface CustomerSummary {
   id: string;
@@ -70,6 +71,7 @@ type Filter = 'all' | 'debt';
 
 export default function Customers() {
   const { t, lang, accentColors } = usePrefs();
+  const theme = useTheme();
   const router = useRouter();
   const { data, loading, reload } = useLoader(useCallback(loadCustomers, []));
   const [filter, setFilter] = useState<Filter>('all');
@@ -105,19 +107,55 @@ export default function Customers() {
           onChange={setFilter}
         />
 
-        {/* The number the owners actually care about, always in view. */}
+        {/* The number the owners actually care about, given the weight to match.
+            Tapping it jumps straight to the people who owe it. */}
         {debtLabel ? (
-          <Animated.View
-            layout={LinearTransition}
-            style={[styles.debtBar, { backgroundColor: palette.dangerSoft }]}
-          >
-            <Ionicons name="wallet-outline" size={18} color={palette.warning} />
-            <Text variant="label" color={palette.textDim} style={styles.debtLabel}>
-              {t('totalDebt')}
-            </Text>
-            <Text variant="heading" numeric color={palette.warning}>
-              {debtLabel} {t('soum')}
-            </Text>
+          <Animated.View layout={LinearTransition} entering={FadeInDown.duration(320)}>
+            <PressableScale
+              onPress={() => setFilter(filter === 'debt' ? 'all' : 'debt')}
+              to={0.985}
+              accessibilityLabel={`${t('totalDebt')} ${debtLabel} ${t('soum')}`}
+            >
+              <View
+                style={[
+                  styles.debtCard,
+                  {
+                    backgroundColor: theme.dangerSoft,
+                    borderColor: theme.warning + '33',
+                    borderRadius: radius.lg,
+                  },
+                ]}
+              >
+                <View style={styles.debtTop}>
+                  <View style={[styles.debtIcon, { backgroundColor: theme.warning + '1F' }]}>
+                    <Ionicons name="wallet" size={16} color={theme.warning} />
+                  </View>
+                  <Text variant="caption" color={theme.textDim} style={styles.debtEyebrow}>
+                    {t('totalDebt').toUpperCase()}
+                  </Text>
+                  <Ionicons
+                    name={filter === 'debt' ? 'chevron-up' : 'chevron-forward'}
+                    size={16}
+                    color={theme.textFaint}
+                  />
+                </View>
+
+                {/* Amount and unit on one baseline: the figure is the headline,
+                    the currency is a footnote to it. */}
+                <View style={styles.debtAmount}>
+                  <Text variant="display" numeric color={theme.warning}>
+                    {debtLabel}
+                  </Text>
+                  <Text variant="heading" color={theme.warning} style={styles.debtUnit}>
+                    {t('soum')}
+                  </Text>
+                </View>
+
+                <Text variant="label" color={theme.textDim}>
+                  {t('owesCount', { n: debtors.length })}
+                </Text>
+              </View>
+            </PressableScale>
           </Animated.View>
         ) : null}
       </View>
@@ -156,16 +194,16 @@ export default function Customers() {
                         {item.name || t('none')}
                       </Text>
                       {owedText ? (
-                        <Text variant="label" color={palette.warning} numeric>
+                        <Text variant="label" color={theme.warning} numeric>
                           {t('owes')} {owedText} {t('soum')}
                         </Text>
                       ) : (
-                        <Text variant="label" color={palette.textFaint}>
+                        <Text variant="label" color={theme.textFaint}>
                           {t('settled')}
                         </Text>
                       )}
                       {item.lastSaleAt ? (
-                        <Text variant="caption" color={palette.textFaint}>
+                        <Text variant="caption" color={theme.textFaint}>
                           {t('lastSale')}: {formatDate(item.lastSaleAt, lang)}
                         </Text>
                       ) : null}
@@ -173,9 +211,9 @@ export default function Customers() {
                     <Ionicons
                       name={item.sharesLocation ? 'location' : 'location-outline'}
                       size={18}
-                      color={item.sharesLocation ? accentColors.base : palette.textFaint}
+                      color={item.sharesLocation ? accentColors.base : theme.textFaint}
                     />
-                    <Ionicons name="chevron-forward" size={18} color={palette.textFaint} />
+                    <Ionicons name="chevron-forward" size={18} color={theme.textFaint} />
                   </View>
                 </Card>
               </PressableScale>
@@ -189,15 +227,23 @@ export default function Customers() {
 
 const styles = StyleSheet.create({
   controls: { gap: space.md, paddingBottom: space.base },
-  debtBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    paddingHorizontal: space.base,
-    paddingVertical: space.md,
-    borderRadius: radius.md,
+  debtCard: {
+    borderWidth: 1,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.base,
+    gap: space.xs,
   },
-  debtLabel: { flex: 1 },
+  debtTop: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  debtIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  debtEyebrow: { flex: 1, letterSpacing: 1.2 },
+  debtAmount: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm },
+  debtUnit: { opacity: 0.8 },
   list: { gap: space.md, paddingBottom: space.xxl },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   identity: { flex: 1, gap: 2 },

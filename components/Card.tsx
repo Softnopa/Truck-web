@@ -3,8 +3,9 @@ import React from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { Text } from '@/components/Text';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { elevation, palette, radius as calmRadius, space } from '@/theme/tokens';
+import { radius as calmRadius, space } from '@/theme/tokens';
 import { useSkin } from '@/theme/useSkin';
+import { useElevation, useTheme } from '@/theme/useTheme';
 
 export function Card({
   children,
@@ -15,10 +16,12 @@ export function Card({
 }) {
   const { fun, radius } = useSkin();
   const { accentColors } = usePrefs();
+  const theme = useTheme();
+  const elevation = useElevation();
 
   const shape: ViewStyle = {
     borderRadius: radius.lg,
-    borderColor: fun ? accentColors.soft : palette.border,
+    borderColor: fun ? accentColors.soft : theme.border,
     borderWidth: fun ? 1.5 : 1,
   };
 
@@ -26,7 +29,7 @@ export function Card({
   if (fun) {
     return (
       <LinearGradient
-        colors={[palette.surfaceHi, palette.surface]}
+        colors={[theme.surfaceHi, theme.surface]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.card, shape, elevation.raised, style]}
@@ -36,17 +39,23 @@ export function Card({
     );
   }
 
-  return <View style={[styles.card, shape, elevation.card, style]}>{children}</View>;
+  return (
+    <View style={[styles.card, { backgroundColor: theme.surface }, shape, elevation.card, style]}>
+      {children}
+    </View>
+  );
 }
 
 export function Divider() {
-  return <View style={styles.divider} />;
+  const theme = useTheme();
+  return <View style={[styles.divider, { backgroundColor: theme.border }]} />;
 }
 
 /** Small uppercase label that opens a group of settings or a list section. */
 export function SectionHeader({ title }: { title: string }) {
+  const theme = useTheme();
   return (
-    <Text variant="caption" color={palette.textFaint} style={styles.section}>
+    <Text variant="caption" color={theme.textFaint} style={styles.section}>
       {title.toUpperCase()}
     </Text>
   );
@@ -54,9 +63,10 @@ export function SectionHeader({ title }: { title: string }) {
 
 export function Avatar({ text, color }: { text: string; color: string }) {
   const { radius } = useSkin();
+  const theme = useTheme();
   return (
     <View style={[styles.avatar, { backgroundColor: color, borderRadius: radius.pill }]}>
-      <Text variant="label" color={palette.bg}>
+      <Text variant="label" color={theme.bg}>
         {text}
       </Text>
     </View>
@@ -76,12 +86,10 @@ export function Badge({ label, color, soft }: { label: string; color: string; so
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: palette.surface,
     padding: space.base,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: palette.border,
     marginVertical: space.md,
   },
   section: {

@@ -51,6 +51,20 @@ export function todayISODate(): string {
 }
 
 /**
+ * Wall clock, always 24-hour. `ru` and `uz` are 24-hour natively and the market
+ * runs on it, so `en` is pinned to match rather than drifting to AM/PM — that
+ * also keeps the header width from jumping between languages.
+ */
+export function formatClock(date: Date, lang: Lang): string {
+  return date.toLocaleTimeString(LOCALE[lang], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
+/**
  * Uzbek plates are `01 A123AA`. Accepts sloppy input and normalises spacing and
  * case so the list stays scannable.
  */

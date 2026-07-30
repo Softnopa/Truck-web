@@ -6,7 +6,7 @@ import { DevSettings, Platform } from 'react-native';
 import { DICTIONARIES, isLang, type Lang, type StringKey } from '@/i18n/strings';
 import { supabase } from '@/lib/supabase';
 import type { UserSettingsRow } from '@/lib/database.types';
-import { ACCENTS, isAccentName, type AccentName } from '@/theme/tokens';
+import { ACCENTS, isAccentName, isThemeMode, type AccentName, type ThemeMode } from '@/theme/tokens';
 
 const KEY = 'truck.prefs.v1';
 
@@ -16,9 +16,21 @@ interface Prefs {
   textScale: number;
   /** Fun skin: rounder, bouncier, gradients and produce emoji. */
   fun: boolean;
+  /**
+   * Light/dark. Device-local on purpose: unlike accent and text size, which the
+   * owners set for everyone, this is about the screen in front of one person —
+   * a phone in bright sun and one indoors want different answers.
+   */
+  theme: ThemeMode;
 }
 
-const FALLBACK: Prefs = { lang: 'ru', accent: 'emerald', textScale: 1, fun: false };
+const FALLBACK: Prefs = {
+  lang: 'ru',
+  accent: 'emerald',
+  textScale: 1,
+  fun: false,
+  theme: 'system',
+};
 
 function deviceDefault(): Prefs {
   const tag = Localization.getLocales()[0]?.languageCode ?? 'ru';
@@ -33,6 +45,7 @@ interface PrefsContext extends Prefs {
   setAccent: (accent: AccentName) => Promise<void>;
   setTextScale: (scale: number) => Promise<void>;
   setFun: (fun: boolean) => Promise<void>;
+  setTheme: (theme: ThemeMode) => Promise<void>;
   hydrateFromRemote: (row: UserSettingsRow) => Promise<void>;
 }
 
@@ -90,6 +103,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
               typeof saved.accent === 'string' && isAccentName(saved.accent) ? saved.accent : next.accent,
             textScale: typeof saved.textScale === 'number' ? saved.textScale : next.textScale,
             fun: typeof saved.fun === 'boolean' ? saved.fun : next.fun,
+            theme:
+              typeof saved.theme === 'string' && isThemeMode(saved.theme) ? saved.theme : next.theme,
           };
         }
       } catch {
@@ -157,16 +172,30 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     [prefs]
   );
 
+  const setTheme = useCallback(
+    async (theme: ThemeMode) => {
+      const next = { ...prefs, theme };
+      setPrefs(next);
+      await persistLocal(next);
+    },
+    [prefs]
+  );
+
   /** Applies the row stored server-side after sign-in, without restarting. */
   const hydrateFromRemote = useCallback(async (row: UserSettingsRow) => {
-    const next: Prefs = {
-      lang: isLang(row.language) ? row.language : FALLBACK.lang,
-      accent: isAccentName(row.accent) ? row.accent : FALLBACK.accent,
-      textScale: Number(row.text_scale) || FALLBACK.textScale,
-      fun: Boolean(row.fun_mode),
-    };
-    setPrefs(next);
-    await persistLocal(next);
+    // `theme` is intentionally absent from the server row: it stays whatever
+    // this device chose, so signing in never overrides the local look.
+    setPrefs((current) => {
+      const next: Prefs = {
+        lang: isLang(row.language) ? row.language : FALLBACK.lang,
+        accent: isAccentName(row.accent) ? row.accent : FALLBACK.accent,
+        textScale: Number(row.text_scale) || FALLBACK.textScale,
+        fun: Boolean(row.fun_mode),
+        theme: current.theme,
+      };
+      void persistLocal(next);
+      return next;
+    });
   }, []);
 
   const value = useMemo<PrefsContext>(
@@ -179,9 +208,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setAccent,
       setTextScale,
       setFun,
+      setTheme,
       hydrateFromRemote,
     }),
-    [prefs, ready, t, setLanguage, setAccent, setTextScale, setFun, hydrateFromRemote]
+    [prefs, ready, t, setLanguage, setAccent, setTextScale, setFun, setTheme, hydrateFromRemote]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

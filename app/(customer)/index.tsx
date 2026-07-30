@@ -13,7 +13,8 @@ import { displayFruit } from '@/lib/fruits';
 import { saleTotal } from '@/lib/types';
 import { useLoader } from '@/lib/useLoader';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { palette, space } from '@/theme/tokens';
+import { space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 /** RLS returns only this customer's own sales, so no client-side filter is needed. */
 async function loadMine() {
@@ -27,6 +28,7 @@ async function loadMine() {
 
 export default function MyPurchases() {
   const { t, lang } = usePrefs();
+  const theme = useTheme();
   const { data, loading, reload } = useLoader(useCallback(loadMine, []));
 
   const sales = data?.sales ?? [];
@@ -65,12 +67,12 @@ export default function MyPurchases() {
             <Animated.View entering={FadeInDown.delay(Math.min(index, 8) * 45).springify().damping(18)}>
               <Card>
                 <View style={styles.author}>
-                  <Ionicons name="person-circle-outline" size={16} color={palette.textFaint} />
-                  <Text variant="caption" color={palette.textFaint}>
+                  <Ionicons name="person-circle-outline" size={16} color={theme.textFaint} />
+                  <Text variant="caption" color={theme.textFaint}>
                     {item.createdByName ? t('addedBy', { name: item.createdByName }) : t('unassigned')}
                   </Text>
                   <View style={styles.spacer} />
-                  <Text variant="caption" color={palette.textFaint}>
+                  <Text variant="caption" color={theme.textFaint}>
                     {formatDate(item.createdAt, lang)}
                   </Text>
                 </View>
@@ -79,18 +81,18 @@ export default function MyPurchases() {
                   <Text variant="heading">{displayFruit(item.fruit, t) || t('none')}</Text>
                   <Badge
                     label={settled ? t('settled') : t('owes')}
-                    color={settled ? palette.success : palette.warning}
+                    color={settled ? theme.success : theme.warning}
                     soft={settled ? 'rgba(18,183,106,0.14)' : 'rgba(247,144,9,0.14)'}
                   />
                 </View>
 
-                <Text variant="label" color={palette.textDim} numeric style={styles.breakdown}>
+                <Text variant="label" color={theme.textDim} numeric style={styles.breakdown}>
                   {num(item.boxes)} × {num(item.pricePerBox)} {t('soum')}
                 </Text>
 
                 <Text variant="numeric" numeric style={styles.total}>
                   {blankIfZero(settled ? total : remaining)}{' '}
-                  <Text variant="label" color={palette.textFaint}>
+                  <Text variant="label" color={theme.textFaint}>
                     {t('soum')}
                   </Text>
                 </Text>

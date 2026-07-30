@@ -16,7 +16,8 @@ import { truckRemaining, type TruckDoc } from '@/lib/types';
 import { useLoader } from '@/lib/useLoader';
 import { useAuth } from '@/providers/AuthProvider';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import { palette, radius, space } from '@/theme/tokens';
+import { radius, space } from '@/theme/tokens';
+import { useTheme } from '@/theme/useTheme';
 
 async function loadForm(customerId: string) {
   const [trucks, profiles] = await Promise.all([listTrucks(), listProfiles()]);
@@ -30,6 +31,7 @@ export default function NewSale() {
   const { customerId } = useLocalSearchParams<{ customerId: string }>();
   const id = typeof customerId === 'string' ? customerId : '';
   const { t, accentColors } = usePrefs();
+  const theme = useTheme();
   const { profile } = useAuth();
   const router = useRouter();
 
@@ -81,7 +83,7 @@ export default function NewSale() {
       <FormScroll>
         <Animated.View entering={FadeInDown.duration(320)} style={styles.form}>
           <View style={styles.group}>
-            <Text variant="label" color={palette.textDim}>
+            <Text variant="label" color={theme.textDim}>
               {t('selectTruck')}
             </Text>
             <ScrollView
@@ -102,17 +104,17 @@ export default function NewSale() {
                     style={[
                       styles.truckChip,
                       {
-                        backgroundColor: active ? accentColors.base : palette.surface,
-                        borderColor: active ? accentColors.base : palette.border,
+                        backgroundColor: active ? accentColors.base : theme.surface,
+                        borderColor: active ? accentColors.base : theme.border,
                       },
                     ]}
                   >
-                    <Text variant="label" numeric color={active ? accentColors.on : palette.text}>
+                    <Text variant="label" numeric color={active ? accentColors.on : theme.text}>
                       {item.truckNumber}
                     </Text>
                     <Text
                       variant="caption"
-                      color={active ? accentColors.on : palette.textFaint}
+                      color={active ? accentColors.on : theme.textFaint}
                     >
                       {displayFruit(item.fruit, t)} · {t('boxesLeft', { n: num(truckRemaining(item)) })}
                     </Text>
