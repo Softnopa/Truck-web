@@ -22,6 +22,20 @@ import { Platform } from 'react-native';
 const CHUNK = 1800;
 const useSecure = Platform.OS !== 'web';
 
+/**
+ * When face unlock is armed the session must never reach disk in the clear.
+ * The vault in faceLock holds the only persisted copy, encrypted; Supabase is
+ * allowed to keep this one in memory for the life of the tab, and a reload is
+ * supposed to land back on the lock screen with nothing to read.
+ *
+ * Reads and deletes stay live — only writes are dropped.
+ */
+let suppressed = false;
+
+export function suppressPersistence(on: boolean): void {
+  suppressed = on;
+}
+
 const countKey = (key: string) => `${key}__n`;
 const partKey = (key: string, i: number) => `${key}__${i}`;
 
@@ -59,6 +73,7 @@ export const sessionStorage = {
   },
 
   async setItem(key: string, value: string): Promise<void> {
+    if (suppressed) return;
     if (!useSecure) return AsyncStorage.setItem(key, value);
     try {
       await clearChunks(key);

@@ -6,6 +6,7 @@ import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Segmented } from '@/components/Segmented';
 import { AccentPicker } from '@/components/AccentPicker';
+import { FaceUnlockRow } from '@/components/FaceUnlockRow';
 import { SettingBlock, SettingRow } from '@/components/SettingRow';
 import { Text } from '@/components/Text';
 import { LANGUAGES, LANGUAGE_LABEL } from '@/i18n/strings';
@@ -95,6 +96,8 @@ export default function OwnerSettings() {
           <SectionHeader title={t('account')} />
           <Card>
             <SettingRow label={profile?.full_name ?? t('none')} description={t('roleOwner')} />
+            <Divider />
+            <FaceUnlockRow />
           </Card>
         </Animated.View>
 
