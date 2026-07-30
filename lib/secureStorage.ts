@@ -23,18 +23,32 @@ const CHUNK = 1800;
 const useSecure = Platform.OS !== 'web';
 
 /**
- * When face unlock is armed the session must never reach disk in the clear.
- * The vault in faceLock holds the only persisted copy, encrypted; Supabase is
- * allowed to keep this one in memory for the life of the tab, and a reload is
- * supposed to land back on the lock screen with nothing to read.
+ * With face unlock armed, the session must never reach durable storage in the
+ * clear — the encrypted vault in faceLock is the only copy allowed to outlive
+ * the browser. But demanding a face scan on every reload is unusable, so the
+ * unlocked session goes to `sessionStorage` instead of `localStorage`:
+ * per-tab, wiped when the tab closes.
  *
- * Reads and deletes stay live — only writes are dropped.
+ * The practical effect: reload, navigate, switch apps and come back — no new
+ * prompt. Close the tab or quit the browser and the plaintext is gone, leaving
+ * only the ciphertext, so the next launch asks for a face. Nothing plaintext
+ * survives a browser restart either way; the exposure is the same as the tab
+ * simply being open.
  */
-let suppressed = false;
+let ephemeral = false;
 
-export function suppressPersistence(on: boolean): void {
-  suppressed = on;
+export function setEphemeralSession(on: boolean): void {
+  ephemeral = on;
 }
+
+const tabStore = (): Storage | null => {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+};
 
 const countKey = (key: string) => `${key}__n`;
 const partKey = (key: string, i: number) => `${key}__${i}`;
@@ -51,6 +65,13 @@ async function clearChunks(key: string): Promise<void> {
 
 export const sessionStorage = {
   async getItem(key: string): Promise<string | null> {
+    if (ephemeral) {
+      const held = tabStore()?.getItem(key);
+      // Falls through when absent: a fresh tab has nothing, which is exactly
+      // what makes the lock screen appear.
+      if (held != null) return held;
+      return null;
+    }
     if (!useSecure) return AsyncStorage.getItem(key);
     try {
       const raw = await SecureStore.getItemAsync(countKey(key));
@@ -73,7 +94,10 @@ export const sessionStorage = {
   },
 
   async setItem(key: string, value: string): Promise<void> {
-    if (suppressed) return;
+    if (ephemeral) {
+      tabStore()?.setItem(key, value);
+      return;
+    }
     if (!useSecure) return AsyncStorage.setItem(key, value);
     try {
       await clearChunks(key);
@@ -89,6 +113,9 @@ export const sessionStorage = {
   },
 
   async removeItem(key: string): Promise<void> {
+    // Cleared unconditionally: signing out must not leave a copy behind in the
+    // tab store just because face unlock happened to be off at the time.
+    tabStore()?.removeItem(key);
     if (!useSecure) return AsyncStorage.removeItem(key);
     try {
       await clearChunks(key);

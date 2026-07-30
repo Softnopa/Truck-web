@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { suppressPersistence } from './secureStorage';
+import { setEphemeralSession } from './secureStorage';
 
 /**
  * Face unlock for the browser build, via WebAuthn.
@@ -106,16 +106,30 @@ function write(value: Enrollment | null): void {
 
 // --- capability -------------------------------------------------------------
 
-/** Whether this device has a usable platform authenticator at all. */
-export async function isSupported(): Promise<boolean> {
-  if (!isWeb) return false;
-  if (typeof window === 'undefined' || !window.PublicKeyCredential) return false;
+/**
+ * Why the feature is or is not available here. Reported rather than reduced to
+ * a boolean so the settings row can say what is wrong instead of silently
+ * disappearing, which is exactly how it went missing on iPhone.
+ */
+export type Support =
+  | { ok: true }
+  | { ok: false; reason: 'native' | 'noApi' | 'insecure' | 'noAuthenticator' };
+
+export async function checkSupport(): Promise<Support> {
+  if (!isWeb) return { ok: false, reason: 'native' };
+  if (typeof window === 'undefined' || !window.PublicKeyCredential) {
+    return { ok: false, reason: 'noApi' };
+  }
   // WebAuthn requires a secure context; Vercel serves https, localhost counts.
-  if (!window.isSecureContext) return false;
+  if (!window.isSecureContext) return { ok: false, reason: 'insecure' };
   try {
-    return await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    const available =
+      await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    // iOS reports false until the device itself has Face ID, Touch ID or at
+    // least a passcode configured — there is no authenticator to borrow.
+    return available ? { ok: true } : { ok: false, reason: 'noAuthenticator' };
   } catch {
-    return false;
+    return { ok: false, reason: 'noApi' };
   }
 }
 
@@ -233,9 +247,10 @@ export async function enable(
   liveKey = await keyFromPrf(secret);
   write({ credentialId, userId, vault: await seal(liveKey, tokens) });
 
-  // From here the vault is the only persisted copy. Stop Supabase writing the
-  // plaintext session back to localStorage, or the encryption buys nothing.
-  suppressPersistence(true);
+  // From here the vault is the only copy that outlives the browser. Route the
+  // live session to per-tab storage so reloads stay quiet without ever writing
+  // the token somewhere a closed browser would still hold it.
+  setEphemeralSession(true);
   return { ok: true };
 }
 
@@ -293,14 +308,14 @@ export async function reseal(tokens: SessionTokens): Promise<void> {
 export function disable(): void {
   liveKey = null;
   write(null);
-  suppressPersistence(false);
+  setEphemeralSession(false);
 }
 
 /**
- * Called once at startup, before the Supabase client reads its storage: if a
- * vault is waiting, the plaintext session must stay out of localStorage for the
- * whole life of the tab, including after a successful unlock re-establishes it.
+ * Called once at startup, before the Supabase client reads its storage: with a
+ * vault waiting, the session belongs in per-tab storage for the whole life of
+ * the tab, including after an unlock re-establishes it.
  */
 export function armPersistenceGuard(): void {
-  if (hasLockedSession()) suppressPersistence(true);
+  if (hasLockedSession()) setEphemeralSession(true);
 }

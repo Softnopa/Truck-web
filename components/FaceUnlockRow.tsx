@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { ToggleRow } from '@/components/SettingRow';
-import { disable, enable, isEnrolled, isSupported } from '@/lib/faceLock';
+import { checkSupport, disable, enable, isEnrolled, type Support } from '@/lib/faceLock';
 import { haptics } from '@/lib/haptics';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/AuthProvider';
@@ -18,18 +18,15 @@ import { usePrefs } from '@/providers/PreferencesProvider';
 export function FaceUnlockRow() {
   const { t } = usePrefs();
   const { profile } = useAuth();
-  const [supported, setSupported] = useState(false);
-  const [checked, setChecked] = useState(false);
+  const [support, setSupport] = useState<Support | null>(null);
   const [enrolled, setEnrolled] = useState(() => isEnrolled(profile?.id ?? null));
   const [noPrf, setNoPrf] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    void isSupported().then((ok) => {
-      if (!alive) return;
-      setSupported(ok);
-      setChecked(true);
+    void checkSupport().then((next) => {
+      if (alive) setSupport(next);
     });
     return () => {
       alive = false;
@@ -86,14 +83,24 @@ export function FaceUnlockRow() {
   );
 
   // Native has the OS keystore already and should use expo-local-authentication;
-  // showing a dead toggle there would just be a lie.
-  if (Platform.OS !== 'web' || !checked || !supported) return null;
+  // a toggle there would be a lie. Everywhere else the row stays visible even
+  // when unusable — vanishing silently is what made this look broken on iPhone.
+  if (Platform.OS !== 'web' || !support) return null;
 
-  const description = noPrf
-    ? t('faceUnlockNoPrf')
-    : enrolled
-      ? t('faceUnlockSealed')
-      : t('faceUnlockHint');
+  const blocked = !support.ok;
+  const description = blocked
+    ? t(
+        support.reason === 'noAuthenticator'
+          ? 'faceUnlockNoAuthenticator'
+          : support.reason === 'insecure'
+            ? 'faceUnlockInsecure'
+            : 'faceUnlockNoApi'
+      )
+    : noPrf
+      ? t('faceUnlockNoPrf')
+      : enrolled
+        ? t('faceUnlockSealed')
+        : t('faceUnlockHint');
 
   return (
     <ToggleRow
@@ -101,7 +108,7 @@ export function FaceUnlockRow() {
       description={description}
       value={enrolled}
       onChange={(next) => void toggle(next)}
-      disabled={busy}
+      disabled={busy || blocked}
     />
   );
 }
