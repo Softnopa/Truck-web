@@ -19,8 +19,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const GRID = 3;
 
-/** Along the top, down the right, back along the bottom, then up one. */
-export const PATTERN: readonly number[] = [0, 1, 2, 5, 8, 7, 6, 3];
+/**
+ * Along the top, down the right, left along the bottom, then up into the
+ * middle — a "G". The two dots down the left, 3 and 6, are never touched.
+ *
+ *     ●─●─●
+ *     ·  ● │
+ *     ·  ●─●
+ */
+export const PATTERN: readonly number[] = [0, 1, 2, 5, 8, 7, 4];
 
 /** Fewer than this and it is a slip, not an attempt. */
 export const MIN_DOTS = 4;
