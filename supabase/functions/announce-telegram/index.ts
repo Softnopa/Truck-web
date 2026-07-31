@@ -13,6 +13,14 @@
 //   TELEGRAM_BOT_TOKEN    the bot, shared with the other two functions
 //   TELEGRAM_CHANNEL_ID   e.g. -1001234567890 — see tools/telegram, `channel`
 //   TELEGRAM_CHANNEL_LANG optional: ru (default), uz or en
+//
+// Groups additionally get the day read against yesterday, as a banner with a
+// picture. Set whichever of these you have; a direction with no picture is
+// posted as text, so none of them is required:
+//   TELEGRAM_IMAGE_UP     growth — an https URL, or a Telegram file_id
+//   TELEGRAM_IMAGE_DOWN   a drop
+//   TELEGRAM_IMAGE_FLAT   level, or the first sale of the day
+//   TELEGRAM_TREND_MIN    percent that counts as a move at all (default 5)
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 type Kind = 'truck' | 'sale';
@@ -51,6 +59,14 @@ const STRINGS = {
     truckLabel: 'Машина',
     by: 'Добавил',
     soum: 'сум',
+    astatka: 'Остаток всего',
+    today: 'Сегодня',
+    yesterday: 'вчера',
+    gotMoney: 'Принял',
+    up: 'Продажи растут',
+    down: 'Продажи падают',
+    flat: 'Наравне со вчера',
+    first: 'Первая продажа за день',
   },
   uz: {
     truck: 'Yangi mashina',
@@ -64,6 +80,14 @@ const STRINGS = {
     truckLabel: 'Mashina',
     by: "Qo'shdi",
     soum: "so'm",
+    astatka: 'Astatka jami',
+    today: 'Bugun',
+    yesterday: 'kecha',
+    gotMoney: 'Qabul qildi',
+    up: "Sotuv o'smoqda",
+    down: 'Sotuv tushmoqda',
+    flat: 'Kechagidek',
+    first: 'Bugungi birinchi sotuv',
   },
   en: {
     truck: 'New truck',
@@ -77,6 +101,14 @@ const STRINGS = {
     truckLabel: 'Truck',
     by: 'Added by',
     soum: 'soum',
+    astatka: 'Outstanding total',
+    today: 'Today',
+    yesterday: 'yesterday',
+    gotMoney: 'Took payment',
+    up: 'Sales are up',
+    down: 'Sales are down',
+    flat: 'Level with yesterday',
+    first: 'First sale of the day',
   },
 } as const;
 
@@ -111,6 +143,96 @@ function truckMessage(payload: Record<string, unknown>, t: typeof STRINGS['ru'])
   ].join('\n');
 }
 
+/**
+ * The running picture the groups get under each sale: what is still owed
+ * across everyone, and whether today is beating yesterday.
+ *
+ * Days are cut at local midnight, not UTC — Uzbekistan is UTC+5, so a UTC day
+ * would roll over at five in the morning and put the first sales of a market
+ * day into the previous one.
+ */
+function summarise(sales: any[], payments: any[], offsetHours: number) {
+  const paidBySale = new Map<string, number>();
+  for (const row of payments) {
+    const p = row.payload ?? {};
+    const id = String(p.saleId ?? '');
+    if (id) paidBySale.set(id, (paidBySale.get(id) ?? 0) + (Number(p.amount) || 0));
+  }
+
+  const shift = offsetHours * 3600_000;
+  const dayOf = (iso: string) => Math.floor((new Date(iso).getTime() + shift) / 86_400_000);
+  const today = Math.floor((Date.now() + shift) / 86_400_000);
+
+  let outstanding = 0;
+  let todayTotal = 0;
+  let yesterdayTotal = 0;
+
+  for (const row of sales) {
+    const s = row.payload ?? {};
+    const total = (Number(s.boxesBought ?? s.boxes) || 0) * (Number(s.pricePerBox) || 0);
+    outstanding += Math.max(0, total - (paidBySale.get(row.id) ?? 0));
+
+    const day = dayOf(typeof s.createdAt === 'string' ? s.createdAt : row.updated_at);
+    if (day === today) todayTotal += total;
+    else if (day === today - 1) yesterdayTotal += total;
+  }
+
+  return { outstanding, todayTotal, yesterdayTotal };
+}
+
+type Direction = 'up' | 'down' | 'flat' | 'first';
+
+interface Trend {
+  direction: Direction;
+  /** Percent against yesterday, signed. Zero when there is nothing to compare. */
+  change: number;
+}
+
+/**
+ * Which way the day is going, as one of four cases.
+ *
+ * A threshold rather than a bare sign, because a market day that lands within a
+ * few percent of the last one has not grown or shrunk — it is the same day, and
+ * calling that "sales are up" twice a week is how a banner stops being read.
+ */
+function readTrend(todayTotal: number, yesterdayTotal: number, minPercent: number): Trend {
+  if (yesterdayTotal <= 0) return { direction: 'first', change: 0 };
+
+  const change = Math.round(((todayTotal - yesterdayTotal) / yesterdayTotal) * 100);
+  if (Math.abs(change) < minPercent) return { direction: 'flat', change };
+  return { direction: change > 0 ? 'up' : 'down', change };
+}
+
+const BANNER: Record<Direction, string> = {
+  up: '📈',
+  down: '📉',
+  flat: '➖',
+  first: '🌅',
+};
+
+function trendLine(
+  sums: { todayTotal: number; yesterdayTotal: number },
+  trend: Trend,
+  t: typeof STRINGS['ru']
+): string {
+  const head = `${t.today}: <b>${money(sums.todayTotal)} ${t.soum}</b>`;
+  if (trend.direction === 'first') return head;
+
+  const arrow = trend.change > 0 ? '▲' : trend.change < 0 ? '▼' : '=';
+  return `${head} ${arrow} ${Math.abs(trend.change)}% (${t.yesterday} ${money(sums.yesterdayTotal)})`;
+}
+
+/** The picture for this direction, if the owner has set one. */
+function imageFor(direction: Direction): string | null {
+  const key =
+    direction === 'up'
+      ? 'TELEGRAM_IMAGE_UP'
+      : direction === 'down'
+        ? 'TELEGRAM_IMAGE_DOWN'
+        : 'TELEGRAM_IMAGE_FLAT';
+  return Deno.env.get(key)?.trim() || null;
+}
+
 function saleMessage(payload: Record<string, unknown>, plate: string, t: typeof STRINGS['ru']): string {
   const boxes = Number(payload.boxesBought ?? payload.boxes) || 0;
   const price = Number(payload.pricePerBox) || 0;
@@ -133,10 +255,12 @@ Deno.serve(async (req) => {
   if (!authHeader) return fail('unauthorized', 401, 'Sign in first');
 
   const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
-  const channelId = Deno.env.get('TELEGRAM_CHANNEL_ID');
-  if (!botToken || !channelId) {
-    return fail('not_configured', 500, 'TELEGRAM_BOT_TOKEN / TELEGRAM_CHANNEL_ID are not set');
-  }
+  if (!botToken) return fail('not_configured', 500, 'TELEGRAM_BOT_TOKEN is not set');
+
+  // The channel is optional. It used to be required alongside the token, which
+  // meant a project with groups but no channel announced nothing anywhere —
+  // and said so only in a log line nobody reads.
+  const channelId = Deno.env.get('TELEGRAM_CHANNEL_ID') || null;
 
   const lang = (Deno.env.get('TELEGRAM_CHANNEL_LANG') ?? 'ru') as keyof typeof STRINGS;
   const t = STRINGS[lang] ?? STRINGS.ru;
@@ -216,36 +340,153 @@ Deno.serve(async (req) => {
     text = saleMessage(payload, plate, t);
   }
 
-  const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: channelId,
-      text,
-      parse_mode: 'HTML',
-      disable_notification: kind === 'sale',
-    }),
-  });
+  // Groups get everything the channel gets, and a sale carries the running
+  // picture with it: what is owed across everyone, and today against yesterday
+  // — headlined as growth or as a drop, because that is the line anyone
+  // scrolling a group chat actually stops on.
+  let groupText = text;
+  let groupImage: string | null = null;
+  if (kind === 'sale') {
+    const [salesRes, paymentsRes] = await Promise.all([
+      admin.from('sales').select('id, updated_at, payload').is('deleted_at', null),
+      admin.from('payments').select('id, updated_at, payload').is('deleted_at', null),
+    ]);
+    const offset = Number(Deno.env.get('REPORT_UTC_OFFSET') ?? '5');
+    const sums = summarise(salesRes.data ?? [], paymentsRes.data ?? [], offset);
 
-  const sent = await tgRes.json().catch(() => null);
-  if (!tgRes.ok || !sent?.ok) {
-    // Release the claim, or this document could never be announced again — the
-    // usual cause is the bot not being an admin of the channel yet, which the
-    // owner fixes and then retries.
-    await admin.from('telegram_posts').delete().eq('kind', kind).eq('doc_id', id);
-    const description = String(sent?.description ?? `HTTP ${tgRes.status}`);
-    console.error('channel post failed', kind, id, description);
-    return fail('telegram_failed', 502, description);
+    const minPercent = Math.max(0, Number(Deno.env.get('TELEGRAM_TREND_MIN') ?? '5') || 0);
+    const trend = readTrend(sums.todayTotal, sums.yesterdayTotal, minPercent);
+    groupImage = imageFor(trend.direction);
+
+    groupText = [
+      text,
+      '➖➖➖➖➖➖➖',
+      `${BANNER[trend.direction]} <b>${t[trend.direction]}</b>`,
+      trendLine(sums, trend, t),
+      line(t.astatka, `${money(sums.outstanding)} ${t.soum}`),
+    ].join('\n');
   }
 
-  const messageId = sent.result?.message_id;
-  if (typeof messageId === 'number') {
+  const post = (chatId: string | number, body: string) =>
+    fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: body,
+        parse_mode: 'HTML',
+        disable_notification: kind === 'sale',
+      }),
+    });
+
+  /**
+   * The same message with a picture over it. A caption is capped at 1024
+   * characters where a message is capped at 4096 — ours is nowhere near either,
+   * but a truncated caption would be silently wrong, so it is checked.
+   */
+  const postPhoto = (chatId: string | number, photo: string, caption: string) =>
+    fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        photo,
+        caption,
+        parse_mode: 'HTML',
+        disable_notification: kind === 'sale',
+      }),
+    });
+
+  // A missing `clients` table or `kind` column (migration 0009 not run yet)
+  // must not take the channel post down with it.
+  const groupsRes = await admin
+    .from('clients')
+    .select('id, telegram_chat_id')
+    .eq('kind', 'group')
+    .not('telegram_chat_id', 'is', null);
+
+  if (groupsRes.error) console.error('group lookup failed', groupsRes.error.message);
+  const groups = groupsRes.data ?? [];
+
+  if (!channelId && groups.length === 0) {
+    await admin.from('telegram_posts').delete().eq('kind', kind).eq('doc_id', id);
+    return fail(
+      'not_configured',
+      500,
+      'Nowhere to post: set TELEGRAM_CHANNEL_ID, or connect a group contact'
+    );
+  }
+
+  let delivered = 0;
+  const problems: string[] = [];
+  let channelMessageId: number | null = null;
+
+  if (channelId) {
+    try {
+      const res = await post(channelId, text);
+      const body = await res.json().catch(() => null);
+      if (res.ok && body?.ok) {
+        delivered++;
+        if (typeof body.result?.message_id === 'number') channelMessageId = body.result.message_id;
+      } else {
+        const description = String(body?.description ?? `HTTP ${res.status}`);
+        console.error('channel post failed', kind, id, description);
+        problems.push(description);
+      }
+    } catch (err) {
+      problems.push(String(err));
+    }
+  }
+
+  // A caption longer than Telegram allows would come back truncated rather than
+  // refused, so the picture is dropped instead of the words being cut.
+  const usePhoto = groupImage !== null && groupText.length <= 1024;
+
+  // One group the bot was removed from must not stop the rest going out.
+  for (const group of groups) {
+    try {
+      let res = usePhoto
+        ? await postPhoto(group.telegram_chat_id!, groupImage!, groupText)
+        : await post(group.telegram_chat_id!, groupText);
+      let body = await res.json().catch(() => null);
+
+      // A picture Telegram will not fetch — a dead URL, a host it cannot reach,
+      // a file too large — must not cost the group the sale itself.
+      if (usePhoto && !(res.ok && body?.ok)) {
+        console.error('group photo failed, falling back to text', group.id, body?.description);
+        res = await post(group.telegram_chat_id!, groupText);
+        body = await res.json().catch(() => null);
+      }
+
+      if (res.ok && body?.ok) delivered++;
+      else {
+        const description = String(body?.description ?? `HTTP ${res.status}`);
+        console.error('group post failed', group.id, description);
+        problems.push(description);
+      }
+    } catch (err) {
+      console.error('group post threw', group.id, err);
+      problems.push(String(err));
+    }
+  }
+
+  if (delivered === 0) {
+    // Release the claim, or this document could never be announced again — the
+    // usual cause is the bot not being an admin yet, which the owner fixes and
+    // then retries.
+    await admin.from('telegram_posts').delete().eq('kind', kind).eq('doc_id', id);
+    return fail('telegram_failed', 502, problems[0] ?? 'Nothing was delivered');
+  }
+
+  if (channelMessageId !== null) {
     await admin
       .from('telegram_posts')
-      .update({ message_id: messageId })
+      .update({ message_id: channelMessageId })
       .eq('kind', kind)
       .eq('doc_id', id);
   }
 
-  return new Response(JSON.stringify({ ok: true }), { headers: JSON_HEADERS });
+  return new Response(JSON.stringify({ ok: true, delivered, problems: problems.length }), {
+    headers: JSON_HEADERS,
+  });
 });

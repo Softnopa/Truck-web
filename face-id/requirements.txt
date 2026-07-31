@@ -1,0 +1,11 @@
+# Two packages, both wheels — nothing here needs a compiler, which is the whole
+# reason this uses OpenCV's bundled models rather than dlib or insightface.
+#
+#   py -m venv .venv
+#   .venv\Scripts\pip install -r requirements.txt
+#   .venv\Scripts\python -m faceid models
+#
+# opencv-python carries the ONNX runtime, the YuNet detector class and the SFace
+# recogniser class. The model weights themselves are downloaded separately.
+opencv-python>=4.9
+numpy>=1.26

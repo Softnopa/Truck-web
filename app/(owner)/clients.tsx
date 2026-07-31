@@ -3,67 +3,42 @@ import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
-import { Button, PressableScale } from '@/components/Button';
+import { PressableScale } from '@/components/Button';
 import { Avatar, Card } from '@/components/Card';
 import { Confirm } from '@/components/Confirm';
 import { EmptyState } from '@/components/EmptyState';
-import { Field } from '@/components/Field';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
-import { Sheet } from '@/components/Sheet';
 import { Text } from '@/components/Text';
-import { deleteClient, EdgeFunctionError, listClients, sendTelegramMessage } from '@/lib/api';
+import { deleteClient, listClients } from '@/lib/api';
 import type { ClientRow } from '@/lib/database.types';
 import { initials } from '@/lib/format';
 import { haptics } from '@/lib/haptics';
+import { inviteLink } from '@/lib/invite';
 import { shareOrCopy } from '@/lib/share';
 import { useLoader } from '@/lib/useLoader';
 import { useRealtime } from '@/lib/useRealtime';
 import { usePrefs } from '@/providers/PreferencesProvider';
-import type { StringKey } from '@/i18n/strings';
 import { space } from '@/theme/tokens';
 import { useTheme } from '@/theme/useTheme';
 
-const BOT_USERNAME = process.env.EXPO_PUBLIC_TELEGRAM_BOT_USERNAME;
-
-const MESSAGE_LIMIT = 900;
-
-/** What went wrong, in the owner's language rather than the server's. */
-function failureKey(error: unknown): StringKey {
-  if (!(error instanceof EdgeFunctionError)) return 'somethingWrong';
-  switch (error.code) {
-    case 'unreachable':
-      return 'sendUnreachable';
-    case 'not_configured':
-      return 'sendNotConfigured';
-    case 'not_linked':
-      return 'sendNotLinked';
-    case 'not_found':
-      return 'sendNotFound';
-    case 'blocked':
-      return 'sendBlocked';
-    case 'unauthorized':
-    case 'forbidden':
-      return 'sendForbidden';
-    case 'telegram_failed':
-      return 'sendTelegramFailed';
-    default:
-      return 'messageFailed';
-  }
-}
-
 type Notice = { kind: 'ok' | 'bad'; text: string };
 
+/**
+ * The contacts a bot can reach, and nothing more.
+ *
+ * There is deliberately no way to type a message here. A private chat is
+ * chased by pressing WARN on the customer — the wording is built server-side
+ * from that customer's own unpaid sales (see `remind-telegram`), so a hand-typed
+ * figure can never contradict the books. A group receives every sale by itself.
+ * That leaves this screen two jobs: hand out the invite link, and delete.
+ */
 export default function Clients() {
   const { t, accentColors } = usePrefs();
   const theme = useTheme();
   const router = useRouter();
   const { data, loading, reload } = useLoader(useCallback(() => listClients(), []));
 
-  const [composing, setComposing] = useState<ClientRow | null>(null);
-  const [draft, setDraft] = useState('');
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ClientRow | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -78,15 +53,19 @@ export default function Clients() {
     haptics.tap();
     // Without the bot's @username there is no link to build. Saying so beats a
     // button that quietly does nothing, which is what this used to do.
-    if (!BOT_USERNAME) {
+    const link = inviteLink(client.invite_code, client.kind);
+    if (!link) {
       haptics.failed();
       say('bad', t('botUsernameMissing'));
       return;
     }
 
-    const link = `https://t.me/${BOT_USERNAME}?start=${client.invite_code}`;
     void (async () => {
-      const how = await shareOrCopy(t('inviteMessage', { link }));
+      const how = await shareOrCopy(
+        client.kind === 'group'
+          ? t('inviteGroupMessage', { link, code: client.invite_code })
+          : t('inviteMessage', { link })
+      );
       // The share sheet does not exist on desktop web, so say plainly where the
       // link went instead of appearing to do nothing.
       if (how === 'failed') {
@@ -97,40 +76,6 @@ export default function Clients() {
         if (how === 'copied') say('ok', t('linkCopied'));
       }
     })();
-  };
-
-  const openCompose = (client: ClientRow) => {
-    haptics.tap();
-    setDraft('');
-    setSendError(null);
-    setNotice(null);
-    setComposing(client);
-  };
-
-  const send = async () => {
-    const client = composing;
-    const text = draft.trim();
-    if (!client || !text || sending) return;
-
-    setSending(true);
-    setSendError(null);
-    try {
-      await sendTelegramMessage(client.id, text);
-      haptics.saved();
-      setComposing(null);
-      setDraft('');
-      say('ok', t('messageSent'));
-    } catch (error) {
-      // Stays inside the sheet with the text intact, so the owner can fix the
-      // cause and press send again without retyping.
-      haptics.failed();
-      setSendError(t(failureKey(error)));
-      if (error instanceof EdgeFunctionError) {
-        console.warn('send-telegram failed', error.code, error.status, error.detail);
-      }
-    } finally {
-      setSending(false);
-    }
   };
 
   const askDelete = (client: ClientRow) => {
@@ -208,6 +153,19 @@ export default function Clients() {
         }
         renderItem={({ item, index }) => {
           const linked = Boolean(item.telegram_chat_id);
+          const group = item.kind === 'group';
+          // A chat with nobody behind it can never be chased: WARN looks the
+          // contact up by customer, so an unset one is a dead row worth naming.
+          const orphan = !group && !item.customer_id;
+
+          const status = !linked
+            ? { icon: 'paper-plane-outline' as const, text: t('telegramNotLinked'), on: false }
+            : group
+              ? { icon: 'megaphone' as const, text: t('groupLinked'), on: true }
+              : orphan
+                ? { icon: 'alert-circle' as const, text: t('contactNoCustomer'), on: false }
+                : { icon: 'notifications' as const, text: t('contactAuto'), on: true };
+
           return (
             <Animated.View
               layout={LinearTransition.springify().damping(20)}
@@ -218,7 +176,7 @@ export default function Clients() {
                   both on web. */}
               <View>
                 <PressableScale
-                  onPress={() => (linked ? openCompose(item) : invite(item))}
+                  onPress={() => (linked ? askDelete(item) : invite(item))}
                   onLongPress={() => askDelete(item)}
                   to={0.99}
                   accessibilityLabel={item.name}
@@ -227,9 +185,16 @@ export default function Clients() {
                     <View style={styles.row}>
                       <Avatar text={initials(item.name)} color={accentColors.base} />
                       <View style={styles.identity}>
-                        <Text variant="heading" numberOfLines={1}>
-                          {item.name || t('none')}
-                        </Text>
+                        <View style={styles.nameRow}>
+                          <Ionicons
+                            name={group ? 'people' : 'person'}
+                            size={13}
+                            color={theme.textFaint}
+                          />
+                          <Text variant="heading" numberOfLines={1} style={styles.name}>
+                            {item.name || t('none')}
+                          </Text>
+                        </View>
                         {item.phone ? (
                           <Text variant="label" color={theme.textDim} numeric>
                             {item.phone}
@@ -237,14 +202,37 @@ export default function Clients() {
                         ) : null}
                         <View style={styles.statusRow}>
                           <Ionicons
-                            name={linked ? 'paper-plane' : 'paper-plane-outline'}
+                            name={status.icon}
                             size={13}
-                            color={linked ? accentColors.base : theme.textFaint}
+                            color={
+                              status.on
+                                ? accentColors.base
+                                : orphan && linked
+                                  ? theme.warning
+                                  : theme.textFaint
+                            }
                           />
-                          <Text variant="caption" color={linked ? accentColors.base : theme.textFaint}>
-                            {linked ? t('telegramLinked') : t('telegramNotLinked')}
+                          <Text
+                            variant="caption"
+                            color={
+                              status.on
+                                ? accentColors.base
+                                : orphan && linked
+                                  ? theme.warning
+                                  : theme.textFaint
+                            }
+                            style={styles.name}
+                          >
+                            {status.text}
                           </Text>
                         </View>
+                        {/* Said once per connected chat, because it is the whole
+                            answer to "where do I write to them?" */}
+                        {linked && !group && !orphan ? (
+                          <Text variant="caption" color={theme.textFaint}>
+                            {t('contactAutoHint')}
+                          </Text>
+                        ) : null}
                       </View>
                       {/* Reserves the space the round button floats over. */}
                       <View style={styles.actionSlot} />
@@ -256,15 +244,19 @@ export default function Clients() {
                     card, only the round button below catches them. */}
                 <View style={styles.actionLayer} pointerEvents="box-none">
                   <PressableScale
-                    onPress={() => (linked ? openCompose(item) : invite(item))}
+                    onPress={() => (linked ? askDelete(item) : invite(item))}
                     to={0.92}
-                    accessibilityLabel={linked ? t('sendMessage') : t('inviteClient')}
-                    style={[styles.actionBtn, { backgroundColor: accentColors.soft }]}
+                    haptic="none"
+                    accessibilityLabel={linked ? t('deleteClient') : t('inviteClient')}
+                    style={[
+                      styles.actionBtn,
+                      { backgroundColor: linked ? theme.dangerSoft : accentColors.soft },
+                    ]}
                   >
                     <Ionicons
-                      name={linked ? 'chatbubble-ellipses' : 'link'}
+                      name={linked ? 'trash-outline' : 'link'}
                       size={18}
-                      color={accentColors.base}
+                      color={linked ? theme.danger : accentColors.base}
                     />
                   </PressableScale>
                 </View>
@@ -273,49 +265,6 @@ export default function Clients() {
           );
         }}
       />
-
-      <Sheet
-        visible={composing !== null}
-        title={composing ? `${t('messageSheetTitle')} · ${composing.name}` : ''}
-        onClose={() => {
-          if (!sending) setComposing(null);
-        }}
-      >
-        <Field
-          label={t('message')}
-          value={draft}
-          onChangeText={(v) => {
-            setDraft(v);
-            if (sendError) setSendError(null);
-          }}
-          placeholder={t('messagePlaceholder')}
-          autoCapitalize="sentences"
-          maxLength={MESSAGE_LIMIT}
-          multiline
-          autoFocus
-        />
-
-        {sendError ? (
-          <View style={[styles.error, { backgroundColor: theme.dangerSoft }]}>
-            <Ionicons name="alert-circle" size={16} color={theme.danger} />
-            <Text variant="label" color={theme.danger} style={styles.errorText}>
-              {sendError}
-            </Text>
-          </View>
-        ) : (
-          <Text variant="caption" color={theme.textFaint}>
-            {t('messageDeliveredVia')}
-          </Text>
-        )}
-
-        <Button
-          label={sending ? t('sending') : t('sendMessage')}
-          onPress={() => void send()}
-          disabled={draft.trim().length === 0}
-          loading={sending}
-          icon={<Ionicons name="paper-plane" size={18} color={accentColors.on} />}
-        />
-      </Sheet>
 
       <Confirm
         visible={pendingDelete !== null}
@@ -350,6 +299,8 @@ const styles = StyleSheet.create({
   list: { gap: space.md, paddingBottom: space.xxl },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   identity: { flex: 1, gap: 2 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  name: { flexShrink: 1 },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   actionSlot: { width: 40, height: 40 },
   actionLayer: {
@@ -366,12 +317,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  error: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: space.sm,
-    padding: space.md,
-    borderRadius: 12,
-  },
-  errorText: { flex: 1 },
 });

@@ -1,4 +1,5 @@
 import type {
+  ClientKind,
   ClientRow,
   ConsentRow,
   CustomerLocationRow,
@@ -47,6 +48,7 @@ export type EdgeErrorCode =
   | 'bad_request'
   | 'not_found'
   | 'not_linked'
+  | 'nothing_owed'
   | 'blocked'
   | 'telegram_failed'
   | 'forbidden'
@@ -454,15 +456,34 @@ export async function listClients(): Promise<ClientRow[]> {
 
 export async function createClient(
   ownerId: string,
-  input: { name: string; phone: string }
+  input: { name: string; phone: string; kind: ClientKind; customerId: string | null }
 ): Promise<ClientRow> {
   const { data, error } = await supabase
     .from('clients')
-    .insert({ owner_id: ownerId, name: input.name, phone: input.phone || null })
+    .insert({
+      owner_id: ownerId,
+      name: input.name,
+      phone: input.phone || null,
+      kind: input.kind,
+      // Only a private chat chases a debt, so only a chat carries the link.
+      customer_id: input.kind === 'chat' ? input.customerId : null,
+    })
     .select()
     .single();
   if (error) throw error;
   return data;
+}
+
+/**
+ * Both kinds of customer as one pickable list — the same merge the customers
+ * screen does, for the contact form's "which customer is this?" picker.
+ */
+export async function listAllCustomers(): Promise<{ id: string; name: string }[]> {
+  const [profiles, walkIns] = await Promise.all([listProfiles(), listCustomers()]);
+  return [
+    ...profiles.filter((p) => p.role === 'customer').map((p) => ({ id: p.id, name: p.full_name })),
+    ...walkIns.map((c) => ({ id: c.id, name: c.name })),
+  ].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function deleteClient(id: string): Promise<void> {
@@ -471,13 +492,35 @@ export async function deleteClient(id: string): Promise<void> {
 }
 
 /**
- * Calls the `send-telegram` edge function, which holds the bot token.
+ * Chases one customer for payment over Telegram.
  *
- * Throws `EdgeFunctionError` — the caller is expected to show why, not just
- * that it failed.
+ * The wording is built server-side from the customer's own unpaid sales, so an
+ * owner cannot accidentally send a figure that does not match the books, and
+ * the scheduled sweep and this button produce the same message.
  */
-export async function sendTelegramMessage(clientId: string, message: string): Promise<void> {
-  const text = message.trim();
-  if (!text) throw new EdgeFunctionError('bad_request', null, 'empty message');
-  await invokeFunction('send-telegram', { clientId, message: text });
+export async function remindCustomer(
+  customerId: string,
+  coords?: { lat: number; lng: number }
+): Promise<void> {
+  await invokeFunction('remind-telegram', { customerId, coords: coords ?? null });
+}
+
+/** What the Growth button did, so the screen can say it rather than just flash. */
+export interface GrowthResult {
+  /** Groups the report reached. */
+  delivered: number;
+  /** Of those, how many it managed to pin — needs the bot to be an admin. */
+  pinned: number;
+}
+
+/**
+ * Posts the day's figures to every connected group and pins the result.
+ *
+ * Nothing is sent from here: the body is empty on purpose and the whole report
+ * is built server-side from the books, so the group cannot be shown a number
+ * that no screen could reproduce.
+ */
+export async function postGrowthReport(): Promise<GrowthResult> {
+  const result = await invokeFunction<GrowthResult>('growth-telegram', {});
+  return { delivered: result?.delivered ?? 0, pinned: result?.pinned ?? 0 };
 }

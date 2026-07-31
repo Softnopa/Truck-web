@@ -88,20 +88,21 @@ owner's device.
 
 ### 7. Telegram
 
-One bot does two jobs: it announces new trucks and sales in a channel, and it
-carries the messages owners send to their contacts. Three edge functions, all
-in `supabase/functions/`.
+One bot does two jobs: it announces new trucks and sales, and it chases
+customers for money. Nobody types a message anywhere — every word the bot sends
+is built server-side from the books. The functions live in
+`supabase/functions/`.
 
 1. Create the bot with BotFather, and add it as an **admin** of the channel.
 2. In **Edge Functions → Secrets**, add:
-   - `TELEGRAM_BOT_TOKEN` — shared by all three functions
+   - `TELEGRAM_BOT_TOKEN` — shared by every function
    - `TELEGRAM_CHANNEL_ID` (e.g. `-1001234567890`)
    - `TELEGRAM_WEBHOOK_SECRET` — any long random string you choose
    - optionally `TELEGRAM_CHANNEL_LANG=ru|uz|en`
-3. Deploy `announce-telegram`, `send-telegram` and `telegram-webhook`.
+3. Deploy `announce-telegram`, `remind-telegram` and `telegram-webhook`.
    **Turn "Verify JWT" off for `telegram-webhook` only** — Telegram calls it and
    has no Supabase session, so with verification on every update is rejected
-   before it reaches the code and the bot looks dead. The other two keep it on;
+   before it reaches the code and the bot looks dead. The others keep it on;
    they run as the signed-in owner.
 4. Point Telegram at the webhook, passing the same secret:
 
@@ -121,11 +122,150 @@ Announcements fire automatically when a truck or sale is created; `telegram_post
 **Contacts** are people with no app account. The owner shares
 `t.me/<bot>?start=<invite_code>`; tapping it sends `/start <code>` to the
 webhook, which trades the code for that chat id. Until they do, the app shows
-"Not connected yet" and a send is refused with a reason rather than failing
-silently.
+"Not connected yet".
+
+A contact is one of two kinds, chosen when it is added (migration 0009):
+
+- **Chat** — one person, and always *a customer*: the contact is created by
+  picking from the customers list and takes that customer's name, so the two
+  can never drift apart. There is no message box in the app. Pressing **WARN**
+  on that customer is the send: the bot writes the reminder itself from the
+  customer's own unpaid sales — name, amount, date, and the position their
+  device just answered with — and the nightly sweep sends the same wording for
+  anything unpaid for three days.
+- **Group** — a Telegram group. It receives every sale as it happens, with the
+  buyer, who took the money, the outstanding total across all customers, and
+  today's takings read against yesterday's.
+
+Groups link with `t.me/<bot>?startgroup=<code>`, which only adds the bot —
+Telegram does not reliably hand the code over afterwards, so send
+`/start <code>` inside the group once. The bot says so itself when it is added.
+
+#### Growth and drops in the group, with pictures
+
+Every sale posted to a group carries a banner reading the day against the one
+before it: **📈 Sales are up**, **📉 Sales are down**, **➖ Level with
+yesterday**, or **🌅 First sale of the day** when there is nothing to compare
+against yet. Give each direction a picture and the post becomes that picture
+with the figures as its caption. All four secrets are optional — a direction
+with no picture is posted as text, so you can set only the two that matter:
+
+| Secret | When it is used |
+| --- | --- |
+| `TELEGRAM_IMAGE_UP` | the day is ahead of yesterday |
+| `TELEGRAM_IMAGE_DOWN` | the day is behind yesterday |
+| `TELEGRAM_IMAGE_FLAT` | within the threshold either way, or the first sale |
+| `TELEGRAM_TREND_MIN` | percent that counts as a move at all — default `5` |
+
+Each image is an `https://` URL Telegram can fetch, or a `file_id` from a photo
+the bot has already sent. Supabase Storage works well for this: upload to a
+public bucket and paste the public URL. If Telegram will not fetch it — dead
+link, file too large, host unreachable — the post falls back to plain text, so
+a broken picture never costs the group the sale.
+
+`TELEGRAM_TREND_MIN` exists so a day landing within a few percent of the last
+one is reported as level rather than as growth. Set it to `0` to have every
+non-zero difference call itself up or down.
+
+The channel keeps the plain announcement; the banner and the pictures are for
+groups, where they are read by people rather than archived.
+
+### 8. Automatic payment reminders
+
+`remind-telegram` chases overdue debts. Add a `CRON_SECRET` secret (any long
+random string) alongside the bot token, then schedule the sweep — **Dashboard →
+Integrations → Cron**, or in the SQL editor with pg_cron and pg_net:
+
+```sql
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+select cron.schedule(
+  'telegram-payment-reminders',
+  '0 4 * * *',                             -- 04:00 UTC = 09:00 in Tashkent
+  $$
+  select net.http_post(
+    url     := 'https://euvmtcfioafwafudpcda.supabase.co/functions/v1/remind-telegram',
+    headers := '{"Content-Type":"application/json","X-Cron-Secret":"<CRON_SECRET>"}'::jsonb,
+    body    := '{"sweep":true}'::jsonb
+  );
+  $$
+);
+```
+
+Check it with `select jobid, schedule, jobname from cron.job;`, and undo it with
+`select cron.unschedule('telegram-payment-reminders');`. The secret sits in the
+job definition, so anyone with database access can read it — that is the usual
+trade for pg_cron; move it into Supabase Vault if that matters.
+
+It nudges a customer whose oldest unpaid sale is at least three days old, and
+never more than once every three days — both constants sit at the top of
+`supabase/functions/remind-telegram/index.ts`. Run it as often as you like; the
+quiet period is what stops it repeating, not the schedule.
 
 If invite links were created before migration 0008, run it — codes minted
 before it could contain a `+`, which a Telegram deep link cannot carry.
+
+### 9. The Growth button
+
+The **Growth** tab is one button covering most of the screen. Pressing it posts
+the day's figures to every connected group and **pins** the result, so the
+current state of trade sits at the top of the chat instead of scrolling away
+under the next sale.
+
+The report carries the same up/down banner and pictures the per-sale posts do,
+plus the day against yesterday, how many sales there have been, the best
+customer so far, and the outstanding total. The figures above the button are
+what is about to be sent — an owner should see the numbers before publishing
+them.
+
+To turn it on:
+
+1. Run migration `0010_growth_reports.sql`. It widens one check constraint so
+   `telegram_posts` can remember which message is pinned in each group; without
+   it the post still goes out but every report stacks another pin.
+2. Deploy `growth-telegram`, with "Verify JWT" left **on** — it runs as the
+   signed-in owner and refuses anyone who is not one.
+3. Make the bot an **admin** of each group with the **Pin messages** right.
+
+That last step is the one that catches people. Without it the report is posted
+and only the pin is skipped, and the app says so — *"Posted, but not pinned"* —
+rather than reporting a success that did not happen. Everything else it needs
+(`TELEGRAM_BOT_TOKEN`, the `TELEGRAM_IMAGE_*` pictures, `TELEGRAM_TREND_MIN`,
+`REPORT_UTC_OFFSET`) it shares with `announce-telegram`, so a working group
+announcement means this is already configured.
+
+Each press replaces the previous pin rather than adding to it, so a group ends
+up with exactly one report pinned: the latest.
+
+## Screen lock
+
+The app is locked on every launch, and none of it can be switched off from
+inside Settings — a lock an owner can disable is one a stranger holding the
+phone can disable too. Settings states what is on rather than offering it.
+
+- **The pattern** runs everywhere: phone, browser, signed in or out. Signed out
+  it sits on the login page and drawing it reveals the email and password form;
+  signed in it stands in front of the app itself. Five wrong patterns drop the
+  session. It is a screen lock, not a credential — `lib/patternLock.ts` is
+  explicit about what that does and does not buy.
+- **Face ID / Touch ID** (`lib/faceNative.ts`) runs in front of the pattern on a
+  phone, through the OS. Nothing is enrolled and nothing is sealed, because the
+  session already lives in the Keychain rather than in readable storage; a face
+  here buys the same thing the pattern does, faster. It appears only where the
+  device has Face ID, Touch ID or a passcode set up, and cancelling it simply
+  leaves the pattern.
+- **Face unlock / Face ID on the web** are different animals and stay opt-in,
+  because a browser has no keystore: they encrypt the Supabase session with a
+  key that does not exist until a face releases it. `lib/faceLock.ts` (WebAuthn,
+  Windows Hello / Touch ID) and `lib/faceId.ts` (a camera plus the local service
+  in `face-id/`) each explain themselves at the top. Turning either off never
+  leaves the app unlocked; the pattern is still there.
+
+iOS needs `NSFaceIDUsageDescription`, which `app.json` sets through the
+`expo-local-authentication` plugin. Without it iOS silently downgrades the
+prompt to the device passcode, so a build that has lost that key looks like
+Face ID "not working" rather than like a missing permission.
 
 ## Troubleshooting
 

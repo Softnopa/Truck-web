@@ -1,7 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ConsentRow, ProfileRow } from '@/lib/database.types';
-import { disable as disableFaceLock, reseal } from '@/lib/faceLock';
+import { clearVaults, reseal } from '@/lib/faceGate';
 import { CURRENT_CONSENT_VERSION, startTracking, stopTracking } from '@/lib/location';
 import { clearPushTokens, registerPushToken } from '@/lib/push';
 import { supabase } from '@/lib/supabase';
@@ -79,7 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Supabase rotates the refresh token roughly hourly. Without re-sealing,
       // the face-unlock vault would still hold the retired one and the next
-      // launch would fail to restore a session. Silent — see faceLock.reseal.
+      // launch would fail to restore a session. Silent — see faceGate.reseal.
       if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
         void reseal({ access_token: next.access_token, refresh_token: next.refresh_token });
       }
@@ -136,9 +136,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await clearPushTokens(userId);
     }
     // Signing out revokes the refresh token, which is exactly the one sealed in
-    // the face-unlock vault. Leaving the enrolment behind would strand the next
-    // launch at a lock screen that can only ever fail.
-    disableFaceLock();
+    // the face-unlock vault. Leaving it behind would strand the next launch at a
+    // lock screen that can only ever fail. The enrolled face survives — only the
+    // vault goes — so re-arming afterwards is a tap.
+    clearVaults();
     await supabase.auth.signOut();
   }, [session?.user.id]);
 

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Button, PressableScale } from '@/components/Button';
@@ -15,10 +15,12 @@ import { Text } from '@/components/Text';
 import {
   createPayment,
   customerName,
+  EdgeFunctionError,
   listConsents,
   listPayments,
   listSales,
   raiseWarning,
+  remindCustomer,
   setWarningResult,
   tokensFor,
 } from '@/lib/api';
@@ -80,10 +82,43 @@ export default function CustomerDetail() {
   const [askWarn, setAskWarn] = useState(false);
   const [warning, setWarning] = useState(false);
   const [warnFailed, setWarnFailed] = useState(false);
+  const [chased, setChased] = useState(false);
+  /** One reminder per WARN, whichever of the paths below gets there first. */
+  const chasedRef = useRef(false);
+  const chaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [paySale, setPaySale] = useState<SaleDoc | null>(null);
   const [payAmount, setPayAmount] = useState('');
 
+  /**
+   * Sends the Telegram payment reminder for this customer.
+   *
+   * Quiet about a customer with no linked contact, or one who owes nothing:
+   * WARN's own job is done by then and the banner already reports it. Only a
+   * real send failure is worth a line.
+   */
+  const chase = useCallback(
+    async (coords?: { lat: number; lng: number }) => {
+      if (!customerId || chasedRef.current) return;
+      chasedRef.current = true;
+      try {
+        await remindCustomer(customerId, coords);
+        setChased(true);
+      } catch (error) {
+        chasedRef.current = false;
+        if (error instanceof EdgeFunctionError) {
+          if (error.code === 'not_linked' || error.code === 'nothing_owed') return;
+        }
+        console.warn('reminder failed', error);
+      }
+    },
+    [customerId]
+  );
+
   // Watch the raised warning so the owner sees the customer's answer land.
+  //
+  // A position arriving is also the cue to chase them on Telegram: the
+  // reminder's "Siz hozir …" line wants exactly this, the place they are
+  // standing as they read it, which exists only in this moment.
   useEffect(() => {
     if (!warningId) return;
     const channel = supabase
@@ -92,22 +127,29 @@ export default function CustomerDetail() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'warnings', filter: `id=eq.${warningId}` },
         (payload) => {
-          const next = payload.new as { result: WarnResult };
+          const next = payload.new as { result: WarnResult; lat: number | null; lng: number | null };
           setWarnState(next.result);
-          if (next.result === 'located') haptics.saved();
+          if (next.result !== 'located') return;
+          haptics.saved();
+          if (chaseTimer.current) clearTimeout(chaseTimer.current);
+          void chase(
+            next.lat !== null && next.lng !== null ? { lat: next.lat, lng: next.lng } : undefined
+          );
         }
       )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [warningId]);
+  }, [warningId, chase]);
 
   const sendWarning = async () => {
     if (!profile || !customerId || !data) return;
 
     setWarning(true);
     setWarnFailed(false);
+    setChased(false);
+    chasedRef.current = false;
     try {
       const consent = data.consent;
       const allowed = Boolean(consent?.location_granted && !consent.revoked_at);
@@ -130,8 +172,16 @@ export default function CustomerDetail() {
         // Consent refused or revoked: recorded as such, never silently tracked.
         await setWarningResult(raised.id, 'denied');
         setWarnState('denied');
+        // Still chased — the debt is the point, and the reminder simply goes
+        // out without the line about where they are.
+        void chase();
         return;
       }
+
+      // Consent stands, so a live position may be on its way. Give it a moment
+      // to land before sending, but never let a customer who does not answer
+      // mean no reminder at all.
+      chaseTimer.current = setTimeout(() => void chase(), 20_000);
 
       if (!delivered && tokens.length === 0) {
         // Nothing to push to. Recorded as such so the owner knows the customer
@@ -158,6 +208,14 @@ export default function CustomerDetail() {
     setWarnFailed(false);
     setAskWarn(true);
   };
+
+  // A pending chase must not fire after the screen is gone.
+  useEffect(
+    () => () => {
+      if (chaseTimer.current) clearTimeout(chaseTimer.current);
+    },
+    []
+  );
 
   const submitPayment = async () => {
     const amount = parseAmount(payAmount);
@@ -248,6 +306,18 @@ export default function CustomerDetail() {
               </Text>
             </PressableScale>
           ) : null}
+        </Animated.View>
+      ) : null}
+
+      {chased ? (
+        <Animated.View
+          entering={FadeIn.duration(220)}
+          style={[styles.warnBanner, { backgroundColor: accentColors.soft }]}
+        >
+          <Ionicons name="paper-plane" size={18} color={accentColors.base} />
+          <Text variant="label" color={accentColors.base} style={styles.warnText}>
+            {t('reminderSent')}
+          </Text>
         </Animated.View>
       ) : null}
 

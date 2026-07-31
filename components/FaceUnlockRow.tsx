@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { ToggleRow } from '@/components/SettingRow';
+import { isEnrolled as cameraEnrolled } from '@/lib/faceId';
 import { checkSupport, disable, enable, isEnrolled, type Support } from '@/lib/faceLock';
 import { haptics } from '@/lib/haptics';
 import { supabase } from '@/lib/supabase';
@@ -87,20 +88,26 @@ export function FaceUnlockRow() {
   // when unusable — vanishing silently is what made this look broken on iPhone.
   if (Platform.OS !== 'web' || !support) return null;
 
-  const blocked = !support.ok;
-  const description = blocked
-    ? t(
-        support.reason === 'noAuthenticator'
-          ? 'faceUnlockNoAuthenticator'
-          : support.reason === 'insecure'
-            ? 'faceUnlockInsecure'
-            : 'faceUnlockNoApi'
-      )
-    : noPrf
-      ? t('faceUnlockNoPrf')
-      : enrolled
-        ? t('faceUnlockSealed')
-        : t('faceUnlockHint');
+  // Both backends seal the same session, so arming the second would overwrite
+  // the vault the first is waiting on. One at a time, and say which.
+  const otherArmed = cameraEnrolled(profile?.id ?? null);
+  const blocked = !support.ok || otherArmed;
+
+  const description = otherArmed
+    ? t('faceUnlockOtherArmed')
+    : !support.ok
+      ? t(
+          support.reason === 'noAuthenticator'
+            ? 'faceUnlockNoAuthenticator'
+            : support.reason === 'insecure'
+              ? 'faceUnlockInsecure'
+              : 'faceUnlockNoApi'
+        )
+      : noPrf
+        ? t('faceUnlockNoPrf')
+        : enrolled
+          ? t('faceUnlockSealed')
+          : t('faceUnlockHint');
 
   return (
     <ToggleRow
@@ -108,7 +115,7 @@ export function FaceUnlockRow() {
       description={description}
       value={enrolled}
       onChange={(next) => void toggle(next)}
-      disabled={busy || blocked}
+      disabled={busy || (blocked && !enrolled)}
     />
   );
 }

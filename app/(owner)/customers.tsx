@@ -5,12 +5,21 @@ import { FlatList, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { PressableScale } from '@/components/Button';
 import { Avatar, Card } from '@/components/Card';
+import { Confirm } from '@/components/Confirm';
 import { EmptyState } from '@/components/EmptyState';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Segmented } from '@/components/Segmented';
 import { Text } from '@/components/Text';
-import { listConsents, listCustomers, listPayments, listProfiles, listSales } from '@/lib/api';
+import {
+  deleteCustomer,
+  listConsents,
+  listCustomers,
+  listPayments,
+  listProfiles,
+  listSales,
+} from '@/lib/api';
+import { haptics } from '@/lib/haptics';
 import { blankIfZero, formatDate, initials } from '@/lib/format';
 import { isWalkIn, saleTotal } from '@/lib/types';
 import { useLoader } from '@/lib/useLoader';
@@ -95,6 +104,28 @@ export default function Customers() {
   const router = useRouter();
   const { data, loading, reload } = useLoader(useCallback(loadCustomers, []));
   const [filter, setFilter] = useState<Filter>('all');
+  const [pendingDelete, setPendingDelete] = useState<CustomerSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const askDelete = (customer: CustomerSummary) => {
+    haptics.warn();
+    setPendingDelete(customer);
+  };
+
+  const runDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      await deleteCustomer(pendingDelete.id);
+      haptics.saved();
+      await reload();
+    } catch {
+      haptics.failed();
+    } finally {
+      setDeleting(false);
+      setPendingDelete(null);
+    }
+  };
 
   // Another owner recording a payment changes who owes what, so this list has
   // to follow their writes, not just this device's.
@@ -201,54 +232,96 @@ export default function Customers() {
         }
         renderItem={({ item, index }) => {
           const owedText = blankIfZero(item.outstanding);
+          // Only a walk-in can be deleted: a customer with an account is an
+          // `auth.users` row, and nothing in the app is allowed to remove one.
+          const removable = isWalkIn(item.id);
           return (
             <Animated.View
               layout={LinearTransition.springify().damping(20)}
               entering={FadeInDown.delay(Math.min(index, 8) * 45).springify().damping(18)}
             >
-              <PressableScale
-                onPress={() => router.push(`/customer/${item.id}`)}
-                to={0.985}
-                accessibilityLabel={item.name}
-              >
-                <Card>
-                  <View style={styles.row}>
-                    <Avatar text={initials(item.name)} color={accentColors.base} />
-                    <View style={styles.identity}>
-                      <Text variant="heading" numberOfLines={1}>
-                        {item.name || t('none')}
-                      </Text>
-                      {owedText ? (
-                        <Text variant="label" color={theme.warning} numeric>
-                          {t('owes')} {owedText} {t('soum')}
+              {/* The bin is a sibling of the card's pressable, never a child:
+                  nested pressables both fire on web. */}
+              <View>
+                <PressableScale
+                  onPress={() => router.push(`/customer/${item.id}`)}
+                  onLongPress={removable ? () => askDelete(item) : undefined}
+                  to={0.985}
+                  accessibilityLabel={item.name}
+                >
+                  <Card>
+                    <View style={styles.row}>
+                      <Avatar text={initials(item.name)} color={accentColors.base} />
+                      <View style={styles.identity}>
+                        <Text variant="heading" numberOfLines={1}>
+                          {item.name || t('none')}
                         </Text>
-                      ) : (
-                        <Text variant="label" color={theme.textFaint}>
-                          {t('settled')}
-                        </Text>
+                        {owedText ? (
+                          <Text variant="label" color={theme.warning} numeric>
+                            {t('owes')} {owedText} {t('soum')}
+                          </Text>
+                        ) : (
+                          <Text variant="label" color={theme.textFaint}>
+                            {t('settled')}
+                          </Text>
+                        )}
+                        {item.lastSaleAt ? (
+                          <Text variant="caption" color={theme.textFaint}>
+                            {t('lastSale')}: {formatDate(item.lastSaleAt, lang)}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {/* Omitted for walk-ins: with no device there is no
+                          location to share, so a pin would promise nothing. */}
+                      {removable ? null : (
+                        <Ionicons
+                          name={item.sharesLocation ? 'location' : 'location-outline'}
+                          size={18}
+                          color={item.sharesLocation ? accentColors.base : theme.textFaint}
+                        />
                       )}
-                      {item.lastSaleAt ? (
-                        <Text variant="caption" color={theme.textFaint}>
-                          {t('lastSale')}: {formatDate(item.lastSaleAt, lang)}
-                        </Text>
-                      ) : null}
+                      {removable ? (
+                        <View style={styles.binSlot} />
+                      ) : (
+                        <Ionicons name="chevron-forward" size={18} color={theme.textFaint} />
+                      )}
                     </View>
-                    {/* Omitted for walk-ins: with no device there is no
-                        location to share, so a pin would promise nothing. */}
-                    {isWalkIn(item.id) ? null : (
-                      <Ionicons
-                        name={item.sharesLocation ? 'location' : 'location-outline'}
-                        size={18}
-                        color={item.sharesLocation ? accentColors.base : theme.textFaint}
-                      />
-                    )}
-                    <Ionicons name="chevron-forward" size={18} color={theme.textFaint} />
+                  </Card>
+                </PressableScale>
+
+                {removable ? (
+                  <View style={styles.binLayer} pointerEvents="box-none">
+                    <PressableScale
+                      onPress={() => askDelete(item)}
+                      to={0.9}
+                      haptic="none"
+                      accessibilityLabel={`${t('deleteCustomer')} ${item.name}`}
+                      style={[styles.bin, { backgroundColor: theme.dangerSoft }]}
+                    >
+                      <Ionicons name="trash-outline" size={17} color={theme.danger} />
+                    </PressableScale>
                   </View>
-                </Card>
-              </PressableScale>
+                ) : null}
+              </View>
             </Animated.View>
           );
         }}
+      />
+
+      <Confirm
+        visible={pendingDelete !== null}
+        title={t('deleteCustomer')}
+        message={
+          pendingDelete
+            ? `${pendingDelete.name || t('none')} · ${t('deleteCustomerConfirm')}`
+            : t('deleteCustomerConfirm')
+        }
+        confirmLabel={t('delete')}
+        cancelLabel={t('cancel')}
+        destructive
+        busy={deleting}
+        onConfirm={() => void runDelete()}
+        onCancel={() => setPendingDelete(null)}
       />
     </Screen>
   );
@@ -276,4 +349,19 @@ const styles = StyleSheet.create({
   list: { gap: space.md, paddingBottom: space.xxl },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   identity: { flex: 1, gap: 2 },
+  binSlot: { width: 34, height: 34 },
+  binLayer: {
+    position: 'absolute',
+    right: space.base,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  bin: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

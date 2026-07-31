@@ -2,7 +2,7 @@ import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 import type { Database } from './database.types';
-import { armPersistenceGuard } from './faceLock';
+import { armPersistenceGuard } from './faceGate';
 import { sessionStorage } from './secureStorage';
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL;

@@ -1,5 +1,5 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -17,18 +17,19 @@ import { useTheme } from '@/theme/useTheme';
 
 export type ScanState = 'idle' | 'scanning' | 'success' | 'failed';
 
-interface Props {
+interface FrameProps {
   state: ScanState;
   size?: number;
+  children?: React.ReactNode;
 }
 
 /**
- * The Face ID plate: rounded square, face glyph, and a line that sweeps while
- * the authenticator is thinking. It is decoration over `navigator.credentials`
- * — the actual biometric prompt is drawn by the OS and cannot be styled — so
- * the job here is to make the wait legible and the outcome unmistakable.
+ * The Face ID plate: rounded square, corner brackets, and a line that sweeps
+ * while something is thinking. Whatever fills it — a face glyph over the OS
+ * prompt, or a live camera preview — the wait should look the same and the
+ * outcome should be unmistakable.
  */
-export function FaceScan({ state, size = 132 }: Props) {
+export function ScanFrame({ state, size = 132, children }: FrameProps) {
   const theme = useTheme();
   const { accentColors } = usePrefs();
 
@@ -95,17 +96,9 @@ export function FaceScan({ state, size = 132 }: Props) {
         },
       ]}
     >
-      {success ? (
-        <Ionicons name="checkmark" size={size * 0.46} color={theme.success} />
-      ) : (
-        <MaterialCommunityIcons
-          name="face-recognition"
-          size={size * 0.52}
-          color={failed ? theme.danger : accentColors.base}
-        />
-      )}
+      {children}
 
-      {/* Sweeping scan line, hidden unless the authenticator is working. */}
+      {/* Sweeping scan line, hidden unless something is working. */}
       <Animated.View
         pointerEvents="none"
         style={[styles.line, lineStyle, { backgroundColor: accentColors.base }]}
@@ -117,6 +110,30 @@ export function FaceScan({ state, size = 132 }: Props) {
       <Corner tint={tint} style={styles.bl} />
       <Corner tint={tint} style={styles.br} />
     </Animated.View>
+  );
+}
+
+/**
+ * The plate with a face glyph in it. Decoration over `navigator.credentials` —
+ * the actual biometric prompt is drawn by the OS and cannot be styled — so the
+ * job here is to make the wait legible.
+ */
+export function FaceScan({ state, size = 132 }: { state: ScanState; size?: number }) {
+  const theme = useTheme();
+  const { accentColors } = usePrefs();
+
+  return (
+    <ScanFrame state={state} size={size}>
+      {state === 'success' ? (
+        <Ionicons name="checkmark" size={size * 0.46} color={theme.success} />
+      ) : (
+        <MaterialCommunityIcons
+          name="face-recognition"
+          size={size * 0.52}
+          color={state === 'failed' ? theme.danger : accentColors.base}
+        />
+      )}
+    </ScanFrame>
   );
 }
 

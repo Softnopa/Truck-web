@@ -1,14 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Button, PressableScale } from '@/components/Button';
 import { Field } from '@/components/Field';
+import { LockScreen } from '@/components/LockScreen';
+import { NativeFaceGate, useNativeLock } from '@/components/NativeFaceGate';
+import { PatternGate } from '@/components/PatternGate';
 import { Screen } from '@/components/Screen';
 import { Segmented } from '@/components/Segmented';
 import { Text } from '@/components/Text';
 import { LANGUAGES, LANGUAGE_LABEL } from '@/i18n/strings';
+import { hasLockedSession } from '@/lib/faceGate';
 import { haptics } from '@/lib/haptics';
+import { screenUnlocked } from '@/lib/screenLock';
 import { useAuth } from '@/providers/AuthProvider';
 import { usePrefs } from '@/providers/PreferencesProvider';
 import { HIT, radius, space, type ThemeMode } from '@/theme/tokens';
@@ -23,6 +28,15 @@ const THEME_ICON: Record<ThemeMode, keyof typeof Ionicons.glyphMap> = {
   dark: 'moon',
 };
 
+/**
+ * The login page, which is also the lock screen.
+ *
+ * Whoever opens the app lands here, and it offers what a phone's lock screen
+ * offers: a face check that starts by itself where one is armed, and the
+ * pattern underneath it as the passcode. The email and password form is behind
+ * the pattern rather than beside it — a found phone must not present a box to
+ * guess at, and the pattern is what most people will actually use to get to it.
+ */
 export default function SignIn() {
   const { t, lang, setLanguage, accentColors, theme: themeMode, setTheme } = usePrefs();
   const theme = useTheme();
@@ -32,6 +46,26 @@ export default function SignIn() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Read once, at mount: both change underneath as the gates below resolve, and
+  // the page should not rearrange itself mid-scan.
+  const [unlocked, setUnlocked] = useState(screenUnlocked);
+  const [sealed, setSealed] = useState(hasLockedSession);
+
+  // The phone's own check. Nothing is sealed on a device — the session lives in
+  // the Keychain, not in readable storage — so this is a screen lock rather
+  // than a key, and passing it reveals the form the same way the pattern does.
+  const native = useNativeLock();
+
+  /**
+   * The face check proved itself but the sealed session was already dead. They
+   * are not a stranger, so the form opens rather than sending them back to a
+   * lock that can no longer pass.
+   */
+  const sessionExpired = useCallback(() => {
+    setSealed(false);
+    setUnlocked(true);
+  }, []);
 
   const submit = async () => {
     if (!email.trim()) return setError(t('emailRequired'));
@@ -55,32 +89,58 @@ export default function SignIn() {
     if (next) void setTheme(next);
   };
 
+  const themeBar = (
+    // Out of the way of the form, but reachable before anyone signs in — this is
+    // the only screen a customer sees before their prefs load.
+    <View style={styles.themeBar}>
+      <PressableScale
+        onPress={cycleTheme}
+        haptic="select"
+        to={0.9}
+        accessibilityLabel={`${t('theme')}: ${t(
+          themeMode === 'dark' ? 'themeDark' : themeMode === 'light' ? 'themeLight' : 'themeSystem'
+        )}`}
+        style={[styles.themeButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <Ionicons name={THEME_ICON[themeMode]} size={18} color={theme.textDim} />
+        <Text variant="caption" color={theme.textDim}>
+          {t(
+            themeMode === 'dark' ? 'themeDark' : themeMode === 'light' ? 'themeLight' : 'themeSystem'
+          )}
+        </Text>
+      </PressableScale>
+    </View>
+  );
+
+  // Locked: the face check, the pattern, and nothing else. Deliberately not in a
+  // ScrollView — a drag across the grid is the pattern being drawn, and a scroll
+  // view would keep stealing it.
+  if (!unlocked) {
+    return (
+      <Screen edges={['top', 'left', 'right', 'bottom']}>
+        {themeBar}
+        <View style={styles.locked}>
+          {sealed ? (
+            <>
+              <LockScreen auto onUnlocked={() => setUnlocked(true)} onUsePassword={sessionExpired} />
+              <View style={[styles.rule, { backgroundColor: theme.border }]} />
+            </>
+          ) : native?.ok ? (
+            <>
+              <NativeFaceGate auto onUnlocked={() => setUnlocked(true)} size={148} />
+              <View style={[styles.rule, { backgroundColor: theme.border }]} />
+            </>
+          ) : null}
+
+          <PatternGate embedded onUnlocked={() => setUnlocked(true)} />
+        </View>
+      </Screen>
+    );
+  }
+
   return (
     <Screen keyboard>
-      {/* Out of the way of the form, but reachable before anyone signs in —
-          this is the only screen a customer sees before their prefs load. */}
-      <View style={styles.themeBar}>
-        <PressableScale
-          onPress={cycleTheme}
-          haptic="select"
-          to={0.9}
-          accessibilityLabel={`${t('theme')}: ${t(
-            themeMode === 'dark' ? 'themeDark' : themeMode === 'light' ? 'themeLight' : 'themeSystem'
-          )}`}
-          style={[styles.themeButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        >
-          <Ionicons name={THEME_ICON[themeMode]} size={18} color={theme.textDim} />
-          <Text variant="caption" color={theme.textDim}>
-            {t(
-              themeMode === 'dark'
-                ? 'themeDark'
-                : themeMode === 'light'
-                  ? 'themeLight'
-                  : 'themeSystem'
-            )}
-          </Text>
-        </PressableScale>
-      </View>
+      {themeBar}
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -163,6 +223,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     borderWidth: 1,
   },
+  locked: { flex: 1, justifyContent: 'center', gap: space.lg },
+  rule: { height: StyleSheet.hairlineWidth, alignSelf: 'stretch' },
   content: { flexGrow: 1, justifyContent: 'center', paddingVertical: space.xl, gap: space.xxl },
   header: { gap: space.xs },
   eyebrow: { letterSpacing: 1.6, marginBottom: space.xs },

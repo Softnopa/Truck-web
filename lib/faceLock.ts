@@ -1,5 +1,16 @@
-import { Platform } from 'react-native';
 import { setEphemeralSession } from './secureStorage';
+import {
+  fromB64,
+  isWeb,
+  keyFromSecret,
+  readStore,
+  seal,
+  toB64,
+  unseal,
+  writeStore,
+  type SessionTokens,
+  type Vault,
+} from './sessionVault';
 
 /**
  * Face unlock for the browser build, via WebAuthn.
@@ -25,29 +36,23 @@ import { setEphemeralSession } from './secureStorage';
  *
  * Native builds have the OS keystore already (see secureStorage) and should use
  * expo-local-authentication instead; every entry point here no-ops off web.
+ *
+ * For the other way of proving a face — a camera and a face-matching service
+ * running on the owner's own machine — see faceId.ts. Both seal the session
+ * through sessionVault.ts; only the step that releases the key differs.
  */
 
 const STORE_KEY = 'truck.facelock.v1';
 const PRF_SALT = new TextEncoder().encode('truck-app/face-unlock/v1');
 const RP_NAME = 'Truck';
 
-export interface SessionTokens {
-  access_token: string;
-  refresh_token: string;
-}
-
-interface Vault {
-  iv: string;
-  ciphertext: string;
-}
+export type { SessionTokens };
 
 interface Enrollment {
   credentialId: string;
   userId: string;
   vault: Vault;
 }
-
-const isWeb = Platform.OS === 'web';
 
 /**
  * The PRF-derived AES key, held only while the app is open and unlocked.
@@ -59,49 +64,15 @@ const isWeb = Platform.OS === 'web';
  */
 let liveKey: CryptoKey | null = null;
 
-// --- encoding ---------------------------------------------------------------
-
-function toB64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  let s = '';
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s);
-}
-
-/**
- * Backed by an explicit ArrayBuffer rather than `new Uint8Array(n)`: the WebAuthn
- * and SubtleCrypto signatures want `BufferSource`, which since TS 5.7 excludes a
- * view whose buffer might be a SharedArrayBuffer.
- */
-function fromB64(s: string): Uint8Array<ArrayBuffer> {
-  const bin = atob(s);
-  const out = new Uint8Array(new ArrayBuffer(bin.length));
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
 // --- persisted enrolment ----------------------------------------------------
 
 function read(): Enrollment | null {
-  if (!isWeb) return null;
-  try {
-    const raw = window.localStorage.getItem(STORE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Enrollment;
-    return typeof parsed?.credentialId === 'string' ? parsed : null;
-  } catch {
-    return null;
-  }
+  const parsed = readStore<Enrollment>(STORE_KEY);
+  return typeof parsed?.credentialId === 'string' ? parsed : null;
 }
 
 function write(value: Enrollment | null): void {
-  if (!isWeb) return;
-  try {
-    if (value) window.localStorage.setItem(STORE_KEY, JSON.stringify(value));
-    else window.localStorage.removeItem(STORE_KEY);
-  } catch {
-    // A full or blocked localStorage must not break signing in.
-  }
+  writeStore(STORE_KEY, value);
 }
 
 // --- capability -------------------------------------------------------------
@@ -145,32 +116,6 @@ export function hasLockedSession(): boolean {
 }
 
 // --- crypto -----------------------------------------------------------------
-
-function keyFromPrf(secret: ArrayBuffer): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', secret, 'AES-GCM', false, ['encrypt', 'decrypt']);
-}
-
-async function seal(key: CryptoKey, tokens: SessionTokens): Promise<Vault> {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const plaintext = new TextEncoder().encode(JSON.stringify(tokens));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
-  return { iv: toB64(iv.buffer), ciphertext: toB64(ct) };
-}
-
-async function unseal(key: CryptoKey, vault: Vault): Promise<SessionTokens | null> {
-  try {
-    const plain = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: fromB64(vault.iv) },
-      key,
-      fromB64(vault.ciphertext)
-    );
-    const parsed = JSON.parse(new TextDecoder().decode(plain)) as SessionTokens;
-    return parsed?.refresh_token ? parsed : null;
-  } catch {
-    // Wrong key or tampered ciphertext — deliberately indistinguishable.
-    return null;
-  }
-}
 
 /** PRF lives outside the DOM typings, so it is read through a narrow shape. */
 function prfSecret(credential: PublicKeyCredential): ArrayBuffer | null {
@@ -244,7 +189,7 @@ export async function enable(
   const secret = await prfFromAssertion(credentialId);
   if (!secret) return { ok: false, reason: 'noPrf' };
 
-  liveKey = await keyFromPrf(secret);
+  liveKey = await keyFromSecret(secret);
   write({ credentialId, userId, vault: await seal(liveKey, tokens) });
 
   // From here the vault is the only copy that outlives the browser. Route the
@@ -285,7 +230,7 @@ export async function unlock(): Promise<SessionTokens | null> {
   const secret = await prfFromAssertion(saved.credentialId);
   if (!secret) return null;
 
-  const key = await keyFromPrf(secret);
+  const key = await keyFromSecret(secret);
   const tokens = await unseal(key, saved.vault);
   if (!tokens) return null;
 

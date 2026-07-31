@@ -1,0 +1,12 @@
+# Biometric data. Every enrolled face id, the aligned crops it came from, and
+# the secret that releases a session. None of it belongs in a repository, and
+# none of it is recoverable from one — re-enrol instead.
+faces/
+
+# 38 MB of ONNX weights, fetched by `python -m faceid models`.
+models/
+
+.venv/
+__pycache__/
+*.pyc
+tests/.cache/

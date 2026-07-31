@@ -63,6 +63,24 @@ Deno.serve(async (req) => {
   const message = update?.message ?? update?.edited_message;
   const text: string | undefined = message?.text;
   const chatId: number | undefined = message?.chat?.id;
+  const chatType: string = message?.chat?.type ?? update?.my_chat_member?.chat?.type ?? 'private';
+  const inGroup = chatType === 'group' || chatType === 'supergroup';
+
+  // Being added to a group carries no invite code with it: `?startgroup=` is
+  // not guaranteed to deliver its payload once the bot lands. Say what to do
+  // rather than sit there looking connected when nothing is linked.
+  const added = update?.my_chat_member;
+  if (added && typeof added.chat?.id === 'number') {
+    const status: string = added.new_chat_member?.status ?? '';
+    if (status === 'member' || status === 'administrator') {
+      await reply(
+        botToken,
+        added.chat.id,
+        'Send /start followed by the group code from the app, and I will post sales here.'
+      );
+    }
+    return new Response('ok');
+  }
 
   // Telegram retries non-2xx responses, so anything we choose not to act on
   // still gets a 200 once the body has been read.
@@ -83,7 +101,7 @@ Deno.serve(async (req) => {
 
   const { data: client, error } = await supabase
     .from('clients')
-    .select('id, name, telegram_chat_id')
+    .select('id, name, kind, telegram_chat_id')
     .eq('invite_code', code)
     .maybeSingle();
 
@@ -97,12 +115,31 @@ Deno.serve(async (req) => {
     return new Response('ok');
   }
 
+  // A code minted for a group must not bind a private chat, or the sales
+  // report would start arriving as a DM to whoever tried it — and a person's
+  // reminders must never land in a group where everyone reads them.
+  const wantsGroup = client.kind === 'group';
+  if (wantsGroup !== inGroup) {
+    await reply(
+      botToken,
+      chatId,
+      wantsGroup
+        ? 'That code belongs to a group. Add me to the group and send it there.'
+        : 'That code belongs to one person. Send it to me in a private chat.'
+    );
+    return new Response('ok');
+  }
+
   const name = client.name ? `, ${client.name}` : '';
 
   // Already this chat: the client pressed Start twice, or reopened the link.
   // Silence here read as a broken bot, which is how it was reported.
+  const connected = wantsGroup
+    ? `Connected${name}. Sales will be posted here.`
+    : `You're connected${name}. You'll get messages here.`;
+
   if (client.telegram_chat_id === chatId) {
-    await reply(botToken, chatId, `You're already connected${name}. Messages arrive here.`);
+    await reply(botToken, chatId, `Already connected${name}.`);
     return new Response('ok');
   }
 
@@ -126,6 +163,6 @@ Deno.serve(async (req) => {
     return new Response('ok');
   }
 
-  await reply(botToken, chatId, `You're connected${name}. You'll get messages here.`);
+  await reply(botToken, chatId, connected);
   return new Response('ok');
 });

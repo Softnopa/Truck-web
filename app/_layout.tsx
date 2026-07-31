@@ -11,8 +11,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { LockScreen } from '@/components/LockScreen';
-import { disable as disableFaceLock, hasLockedSession } from '@/lib/faceLock';
+import { ScreenLock } from '@/components/ScreenLock';
+import { screenUnlocked } from '@/lib/screenLock';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { PreferencesProvider, usePrefs } from '@/providers/PreferencesProvider';
 import { darkPalette } from '@/theme/tokens';
@@ -37,10 +37,11 @@ function Gate({ children, fontsReady }: { children: React.ReactNode; fontsReady:
   const segments = useSegments();
   const router = useRouter();
 
-  // A sealed session is not the same as no session: the credentials are right
-  // here, encrypted, waiting on the owner's face. Falling through to sign-in
-  // would ask for a password the whole feature exists to avoid.
-  const [locked, setLocked] = useState(() => hasLockedSession());
+  // The lock guards every launch, signed in or not. Signed out it lives on the
+  // login page next to the face check; here it only has to cover the case where
+  // there is no login page to put it on. Held in memory rather than persisted
+  // on purpose: closing the app re-arms it.
+  const [drawn, setDrawn] = useState(screenUnlocked);
 
   // Fonts join the same gate as auth and preferences: holding the splash a
   // moment longer beats letting the whole app repaint in a fallback face.
@@ -53,14 +54,10 @@ function Gate({ children, fontsReady }: { children: React.ReactNode; fontsReady:
     const group = segments[0];
 
     if (!session) {
-      // Re-checked rather than trusted from mount: arming face unlock mid-session
-      // drops the local session on purpose, and that must land on the lock, not
-      // on a password prompt.
-      if (locked) return;
-      if (hasLockedSession()) {
-        setLocked(true);
-        return;
-      }
+      // A sealed session is not the same as no session — the credentials are
+      // right here, encrypted, waiting on a face — but it no longer gets a
+      // screen of its own. The login page carries the face check and the
+      // pattern both, so everyone signed out goes to the same place.
       if (group !== 'sign-in') router.replace('/sign-in');
       return;
     }
@@ -77,21 +74,14 @@ function Gate({ children, fontsReady }: { children: React.ReactNode; fontsReady:
     if (group === undefined || group === 'sign-in' || group === 'permissions' || inWrongRole) {
       router.replace(home);
     }
-  }, [booting, session, hasAnswered, isOwner, segments, router, locked]);
+  }, [booting, session, hasAnswered, isOwner, segments, router]);
 
+  // Before the app itself: whoever picked the device up does not get to see the
+  // takings. Read live rather than from state alone, because a face unlocked on
+  // the login page settles this too and the session can land here first.
   // Held until the splash is gone, so the lock does not flash over it.
-  if (!booting && locked && !session) {
-    return (
-      <LockScreen
-        onUnlocked={() => setLocked(false)}
-        onUsePassword={() => {
-          // Abandoning the vault beats leaving a stale one: after signing in
-          // they re-arm from settings in a tap, and there is no half state.
-          disableFaceLock();
-          setLocked(false);
-        }}
-      />
-    );
+  if (!booting && session && !drawn && !screenUnlocked()) {
+    return <ScreenLock onUnlocked={() => setDrawn(true)} />;
   }
 
   return <>{children}</>;

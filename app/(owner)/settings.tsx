@@ -1,4 +1,4 @@
-import { ScrollView, StyleSheet } from 'react-native';
+import { Platform, ScrollView, StyleSheet } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Button } from '@/components/Button';
 import { Card, Divider, SectionHeader } from '@/components/Card';
@@ -6,7 +6,9 @@ import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { Segmented } from '@/components/Segmented';
 import { AccentPicker } from '@/components/AccentPicker';
+import { FaceIdRow } from '@/components/FaceIdRow';
 import { FaceUnlockRow } from '@/components/FaceUnlockRow';
+import { ScreenLockRow } from '@/components/ScreenLockRow';
 import { SettingBlock, SettingRow } from '@/components/SettingRow';
 import { Text } from '@/components/Text';
 import { LANGUAGES, LANGUAGE_LABEL } from '@/i18n/strings';
@@ -97,7 +99,20 @@ export default function OwnerSettings() {
           <Card>
             <SettingRow label={profile?.full_name ?? t('none')} description={t('roleOwner')} />
             <Divider />
-            <FaceUnlockRow />
+            <ScreenLockRow />
+            {/* Browser only: these two arm an extra face check that seals the
+                session in localStorage. A phone keeps its session in the
+                keystore and gets Face ID from the OS, so neither belongs there
+                — and the dividers must go with them, or the card ends in two
+                rules over nothing. */}
+            {Platform.OS === 'web' ? (
+              <>
+                <Divider />
+                <FaceUnlockRow />
+                <Divider />
+                <FaceIdRow />
+              </>
+            ) : null}
           </Card>
         </Animated.View>
 

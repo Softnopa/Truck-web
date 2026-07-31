@@ -44,6 +44,13 @@ export default function OwnerLayout() {
         }}
       />
       <Tabs.Screen
+        name="growth"
+        options={{
+          title: t('tabGrowth'),
+          tabBarIcon: ({ color, size }) => <Ionicons name="trending-up" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="map"
         options={{
           title: t('tabMap'),

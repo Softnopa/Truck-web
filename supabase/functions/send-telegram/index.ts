@@ -1,9 +1,13 @@
 // Deploy via: Supabase Dashboard -> Edge Functions -> Create a function -> paste this file.
 //
-// Called by the owner app (lib/api.ts `sendTelegramMessage`) with the owner's
-// session token attached automatically by supabase-js. The bot token is a
-// secret set in the function's environment (Dashboard -> Edge Functions ->
-// send-telegram -> Secrets) and never ships to the app.
+// NO LONGER CALLED BY THE APP. Contacts used to have a message box, and this
+// carried what was typed into it. Reminders are now written server-side from
+// the customer's own unpaid sales — see `remind-telegram`, which WARN calls —
+// so there is nothing left in the app that sends free text. Kept because it is
+// deployed and harmless; delete the function in the dashboard to retire it.
+//
+// The bot token is a secret set in the function's environment (Dashboard ->
+// Edge Functions -> send-telegram -> Secrets) and never ships to the app.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 // The app also runs as a web build, and a browser will not POST here until a

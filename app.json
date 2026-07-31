@@ -72,7 +72,13 @@
         }
       ],
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Truck asks for Face ID so only you can open the app and see the day's takings."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false

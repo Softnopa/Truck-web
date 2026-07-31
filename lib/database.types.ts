@@ -69,14 +69,21 @@ export type PushTokenRow = {
   updated_at: string;
 };
 
+/** A private chat gets payment reminders; a group gets the sales report. */
+export type ClientKind = 'chat' | 'group';
+
 export type ClientRow = {
   id: string;
   owner_id: string;
   name: string;
   phone: string | null;
+  kind: ClientKind;
+  /** A `profiles` uuid or a walk-in `cust_...` id — same free text as sales. */
+  customer_id: string | null;
   invite_code: string;
   telegram_chat_id: number | null;
   telegram_linked_at: string | null;
+  last_reminded_at: string | null;
   created_at: string;
   updated_at: string;
 };
