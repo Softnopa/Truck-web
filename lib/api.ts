@@ -7,6 +7,7 @@ import type {
   WarnResult,
   WarningRow,
 } from './database.types';
+import type { ReportLang } from './reportLang';
 import { supabase } from './supabase';
 import {
   docId,
@@ -223,7 +224,7 @@ export async function createSale(
     pricePerBox: number;
   },
   author: Author
-): Promise<void> {
+): Promise<string> {
   const now = new Date().toISOString();
   const id = docId('sale');
   const doc: SaleDoc = {
@@ -247,6 +248,95 @@ export async function createSale(
   });
 
   if (input.truckId) await bumpTruckSold(input.truckId, input.boxes);
+  // Returned so a sale that is settled in the same breath — a cash sale to a
+  // walk-up buyer — can record its payment without a second lookup.
+  return id;
+}
+
+/**
+ * The one row every anonymous sale attaches to.
+ *
+ * A fixed id rather than a minted one, so the second random sale finds the
+ * bucket the first one made. It keeps the `cust_` prefix because everything
+ * that reasons about ids reads that prefix to tell a walk-in from a real
+ * account — see `isWalkIn`.
+ */
+export const RANDOM_CUSTOMER_ID = 'cust_random';
+
+/** Creates the bucket on first use, and revives it if someone deleted it. */
+async function ensureRandomCustomer(name: string, author: Author): Promise<void> {
+  const { data } = await supabase
+    .from('customers')
+    .select('id, deleted_at')
+    .eq('id', RANDOM_CUSTOMER_ID)
+    .maybeSingle();
+
+  const now = new Date().toISOString();
+
+  if (!data) {
+    const doc: CustomerDoc = {
+      id: RANDOM_CUSTOMER_ID,
+      name,
+      phone: '',
+      createdBy: author.id,
+      createdByName: author.name,
+      createdAt: now,
+      updatedAt: now,
+    };
+    // Ignores a duplicate rather than throwing: two tills can ring up their
+    // first random sale at the same moment, and only one of them can win.
+    await supabase
+      .from('customers')
+      .upsert({ id: RANDOM_CUSTOMER_ID, payload: { ...doc }, updated_at: now }, {
+        onConflict: 'id',
+        ignoreDuplicates: true,
+      });
+    return;
+  }
+
+  if (data.deleted_at) {
+    await supabase
+      .from('customers')
+      .update({ deleted_at: null, updated_at: now })
+      .eq('id', RANDOM_CUSTOMER_ID);
+  }
+}
+
+/**
+ * A sale to a buyer nobody took the name of, settled on the spot.
+ *
+ * The payment is written with the sale rather than left for later, and that is
+ * the whole point: an anonymous buyer cannot be phoned, cannot be sent a
+ * Telegram reminder and cannot be warned, so a debt recorded against one could
+ * never be collected — it would only inflate the astatka total that the owners
+ * actually steer by. Cash in hand, books flat.
+ */
+export async function createRandomSale(
+  input: {
+    /** Shown on the bucket row, in the owner's language. */
+    bucketName: string;
+    truckId: string | null;
+    fruit: string;
+    boxes: number;
+    pricePerBox: number;
+  },
+  author: Author
+): Promise<void> {
+  await ensureRandomCustomer(input.bucketName, author);
+
+  const saleId = await createSale(
+    {
+      customerId: RANDOM_CUSTOMER_ID,
+      customerName: input.bucketName,
+      truckId: input.truckId,
+      fruit: input.fruit,
+      boxes: input.boxes,
+      pricePerBox: input.pricePerBox,
+    },
+    author
+  );
+
+  await createPayment(saleId, input.boxes * input.pricePerBox);
 }
 
 /** Keeps the truck's sold counter in step with the sale just written. */
@@ -516,11 +606,11 @@ export interface GrowthResult {
 /**
  * Posts the day's figures to every connected group and pins the result.
  *
- * Nothing is sent from here: the body is empty on purpose and the whole report
- * is built server-side from the books, so the group cannot be shown a number
- * that no screen could reproduce.
+ * The language is the only thing sent from here: the whole report is built
+ * server-side from the books, so the group cannot be shown a number that no
+ * screen could reproduce.
  */
-export async function postGrowthReport(): Promise<GrowthResult> {
-  const result = await invokeFunction<GrowthResult>('growth-telegram', {});
+export async function postGrowthReport(lang: ReportLang): Promise<GrowthResult> {
+  const result = await invokeFunction<GrowthResult>('growth-telegram', { lang });
   return { delivered: result?.delivered ?? 0, pinned: result?.pinned ?? 0 };
 }

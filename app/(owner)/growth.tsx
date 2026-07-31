@@ -1,16 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { PressableScale } from '@/components/Button';
 import { Header } from '@/components/Header';
 import { RainbowButton } from '@/components/RainbowButton';
 import { Screen } from '@/components/Screen';
+import { Segmented } from '@/components/Segmented';
 import { Text } from '@/components/Text';
 import type { StringKey } from '@/i18n/strings';
 import { EdgeFunctionError, listPayments, listSales, postGrowthReport } from '@/lib/api';
 import { blankIfZero } from '@/lib/format';
 import { haptics } from '@/lib/haptics';
+import { loadReportLang, saveReportLang, type ReportLang } from '@/lib/reportLang';
 import { saleTotal } from '@/lib/types';
 import { useLoader } from '@/lib/useLoader';
 import { useRealtime } from '@/lib/useRealtime';
@@ -98,6 +100,24 @@ export default function Growth() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
 
+  // What the *group* reads, which is not the same question as what this owner
+  // reads — see lib/reportLang.ts.
+  const [reportLang, setReportLang] = useState<ReportLang>('ru');
+  useEffect(() => {
+    let alive = true;
+    void loadReportLang().then((saved) => {
+      if (alive) setReportLang(saved);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const pickLang = (next: ReportLang) => {
+    setReportLang(next);
+    void saveReportLang(next);
+  };
+
   useRealtime('growth', ['sales', 'payments'], reload);
 
   const summary = useMemo<Summary>(
@@ -110,7 +130,7 @@ export default function Growth() {
     setBusy(true);
     setNotice(null);
     try {
-      const result = await postGrowthReport();
+      const result = await postGrowthReport(reportLang);
       haptics.saved();
       setNotice(
         result.pinned > 0
@@ -195,6 +215,25 @@ export default function Growth() {
         </Animated.View>
       ) : null}
 
+      {/* Above the button, never inside it: the language is a decision about
+          the post, and it should be settled before the press rather than
+          discovered after one has gone out in the wrong one. */}
+      <View style={styles.langRow}>
+        <Text variant="caption" color={theme.textFaint} style={styles.eyebrow}>
+          {t('reportLanguage').toUpperCase()}
+        </Text>
+        <View style={styles.langPicker}>
+          <Segmented
+            options={[
+              { value: 'ru' as ReportLang, label: 'Русский' },
+              { value: 'uz' as ReportLang, label: "O'zbekcha" },
+            ]}
+            value={reportLang}
+            onChange={pickLang}
+          />
+        </View>
+      </View>
+
       <View style={styles.stage}>
         <RainbowButton
           label={t('growthAction')}
@@ -226,6 +265,8 @@ const styles = StyleSheet.create({
     marginBottom: space.md,
   },
   noticeText: { flex: 1 },
+  langRow: { gap: space.sm, paddingBottom: space.md },
+  langPicker: { alignSelf: 'stretch' },
   /** Everything left after the header and the figures — about 70% of the page. */
   stage: { flex: 1, paddingBottom: space.base },
 });

@@ -157,6 +157,16 @@ const en = {
   addCustomer: 'Add customer',
   newCustomer: 'New customer',
   newCustomerHint: 'For buyers who will never install the app. No account needed — you can sell to them right away.',
+
+  // Two kinds of buyer: the one who stops once, and the one who comes back.
+  customerKind: 'Type',
+  kindRandom: 'Random',
+  kindSpecial: 'Special',
+  kindRandomHint: 'Someone who stopped, bought and paid. No name taken — just record what was sold.',
+  kindSpecialHint: 'A buyer who comes back. Gets a name, a phone and a running balance.',
+  randomCustomer: 'Random customer',
+  randomPaidNote: 'Recorded as paid in full — nothing left to chase.',
+  noTrucksToSell: 'Every truck is sold out. Add one before selling.',
   walkInBadge: 'No account',
   addedBy: 'Added by {name}',
   unassigned: 'Not assigned',
@@ -191,6 +201,8 @@ const en = {
   growthForbidden: 'This account is not allowed to post. Sign in again.',
   growthTelegramFailed: 'Telegram refused the report. Try again in a moment.',
   growthFailed: 'Could not send the report.',
+  /** What the *group* reads. The app's own language is a separate choice. */
+  reportLanguage: 'Report language',
 
   // Clients (Telegram-only contacts, no app account)
   clients: 'Clients',
@@ -472,6 +484,15 @@ const ru: Record<StringKey, string> = {
   addCustomer: 'Добавить клиента',
   newCustomer: 'Новый клиент',
   newCustomerHint: 'Для покупателей, которые не будут ставить приложение. Аккаунт не нужен — продавать можно сразу.',
+
+  customerKind: 'Тип',
+  kindRandom: 'Случайный',
+  kindSpecial: 'Особый',
+  kindRandomHint: 'Остановился, купил, заплатил. Имя не записываем — только то, что продали.',
+  kindSpecialHint: 'Покупатель, который возвращается. С именем, телефоном и остатком долга.',
+  randomCustomer: 'Случайный покупатель',
+  randomPaidNote: 'Записывается как оплаченная полностью — догонять нечего.',
+  noTrucksToSell: 'Все машины распроданы. Сначала добавьте машину.',
   walkInBadge: 'Без аккаунта',
   addedBy: 'Добавил {name}',
   unassigned: 'Не назначен',
@@ -505,6 +526,7 @@ const ru: Record<StringKey, string> = {
   growthForbidden: 'Этому аккаунту нельзя публиковать. Войдите заново.',
   growthTelegramFailed: 'Telegram отклонил отчёт. Попробуйте ещё раз.',
   growthFailed: 'Не удалось отправить отчёт.',
+  reportLanguage: 'Язык отчёта',
 
   clients: 'Контакты',
   addClient: 'Добавить контакт',
@@ -772,6 +794,15 @@ const uz: Record<StringKey, string> = {
   addCustomer: "Mijoz qo'shish",
   newCustomer: 'Yangi mijoz',
   newCustomerHint: "Ilovani o'rnatmaydigan xaridorlar uchun. Akkaunt shart emas — darhol sotishingiz mumkin.",
+
+  customerKind: 'Turi',
+  kindRandom: 'Tasodifiy',
+  kindSpecial: 'Maxsus',
+  kindRandomHint: "To'xtadi, sotib oldi, to'ladi. Ism yozilmaydi — faqat nima sotilgani.",
+  kindSpecialHint: "Qaytib keladigan xaridor. Ism, telefon va qarz qoldig'i bilan.",
+  randomCustomer: 'Tasodifiy xaridor',
+  randomPaidNote: "To'liq to'langan deb yoziladi — eslatadigan narsa qolmaydi.",
+  noTrucksToSell: "Barcha mashinalar sotilgan. Avval mashina qo'shing.",
   walkInBadge: 'Akkauntsiz',
   addedBy: "{name} qo'shgan",
   unassigned: 'Belgilanmagan',
@@ -805,6 +836,7 @@ const uz: Record<StringKey, string> = {
   growthForbidden: 'Bu akkaunt e\'lon qila olmaydi. Qaytadan kiring.',
   growthTelegramFailed: 'Telegram hisobotni qabul qilmadi. Birozdan keyin qayta urining.',
   growthFailed: "Hisobotni yuborib bo'lmadi.",
+  reportLanguage: 'Hisobot tili',
 
   clients: 'Kontaktlar',
   addClient: "Kontakt qo'shish",

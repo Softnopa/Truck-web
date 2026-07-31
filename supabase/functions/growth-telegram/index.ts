@@ -1,20 +1,29 @@
 // Deploy via: Supabase Dashboard -> Edge Functions -> Create a function -> paste this file.
 //
-// The Growth button. An owner presses it, and every linked group gets the day
-// read against the one before it — posted, and pinned, so it sits at the top of
-// the group instead of scrolling away under the next sale.
+// The Growth button. An owner presses it, and every linked group gets the whole
+// day as a dashboard — posted, and pinned, so the state of trade sits at the
+// top of the chat instead of scrolling away under the next sale.
 //
-// Nothing about the wording comes from the app. The caller sends an empty body;
-// the figures are read here, from the books, under the service role — so what
-// the group sees is what the database says, and two owners pressing it a minute
-// apart cannot produce two different numbers.
+// Nothing about the wording comes from the app. The caller sends a language and
+// nothing else; every figure is read here, from the books, under the service
+// role — so what the group sees is what the database says, and two owners
+// pressing it a minute apart cannot produce two different numbers.
 //
-// Secrets (shared with announce-telegram):
+// Deliberately posted as text rather than with a picture. The dashboard runs
+// past Telegram's 1024-character limit for a photo caption, and a caption that
+// long comes back truncated rather than refused — the figures would be cut off
+// mid-report. Per-sale announcements keep their up/down pictures; see
+// announce-telegram.
+//
+// Secrets (shared with announce-telegram unless marked):
 //   TELEGRAM_BOT_TOKEN     the bot
-//   TELEGRAM_CHANNEL_LANG  optional: ru (default), uz or en
-//   TELEGRAM_IMAGE_UP / _DOWN / _FLAT   optional pictures per direction
-//   TELEGRAM_TREND_MIN     percent that counts as a move at all (default 5)
+//   TELEGRAM_CHANNEL_LANG  ru (default) or uz — the fallback when the app sends
+//                          no language of its own
 //   REPORT_UTC_OFFSET      hours ahead of UTC the day is cut at (default 5)
+//   TELEGRAM_DAILY_GOAL    the day's target in soum (default 60000000)   [new]
+//   TELEGRAM_DAY_CLOSES_AT hour trading stops, 0-24, local (default 24)  [new]
+//   TELEGRAM_LOW_STOCK_PCT a truck under this much left is "running out"
+//                          (default 20)                                 [new]
 //
 // Pinning needs the bot to be an **admin** of the group with "Pin messages".
 // Without it the post still goes out and only the pin is skipped — the report
@@ -35,55 +44,109 @@ function fail(code: string, status: number, message: string): Response {
   return new Response(JSON.stringify({ error: code, message }), { status, headers: JSON_HEADERS });
 }
 
+const DAY_MS = 86_400_000;
+
+// --- words -------------------------------------------------------------------
+
 const STRINGS = {
   ru: {
-    title: 'Отчёт по продажам',
-    today: 'Сегодня',
+    title: 'ОТЧЁТ ПО ПРОДАЖАМ',
+    today: 'СЕГОДНЯ',
+    sales: 'продаж',
+    goal: 'ЦЕЛЬ ДНЯ',
+    left: 'Осталось',
+    goalDone: 'Цель дня выполнена!',
+    untilClose: 'до закрытия',
+    closed: 'торговый день закрыт',
+    hourShort: 'ч',
+    minShort: 'м',
+    needPerHour: 'Нужно ~{n} сум/час',
+    compare: 'СРАВНЕНИЕ',
     yesterday: 'Вчера',
-    sales: 'Продаж сегодня',
-    astatka: 'Остаток всего',
+    weekAvg: 'Ср. за неделю',
+    record: 'Рекорд',
+    week: 'НЕДЕЛЯ',
+    now: '← сейчас',
+    weekTotal: 'Итого',
+    vsLastWeek: 'к прошлой неделе',
+    streak: 'СТРИК',
+    streakDays: '{n} дней с продажами',
+    streakRisk: 'Сегодня стрик под угрозой!',
+    streakNone: 'Стрика нет — начните сегодня',
+    topGoods: 'ТОП ТОВАРОВ (неделя)',
+    noGoods: 'На этой неделе продаж ещё не было',
+    stock: 'СКЛАД',
+    stockLeft: 'Остаток',
+    runningOut: '{n} позиций заканчиваются',
     soum: 'сум',
-    up: 'Продажи растут',
-    down: 'Продажи падают',
-    flat: 'Наравне со вчера',
-    first: 'Первая продажа за день',
-    quiet: 'Сегодня продаж пока нет',
-    best: 'Лучший покупатель',
+    mln: 'млн',
+    firstSaleWas: 'День только начался — вчера первая продажа была в {time}. Всё впереди 💪',
+    quietDay: 'Сегодня продаж пока нет, и вчера в это время тоже было тихо.',
+    goingWell: 'Идём с опережением вчерашнего дня. Так держать 💪',
+    behind: 'Отстаём от вчерашнего. Ещё есть время наверстать.',
+    days: ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
+    months: ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+             'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
   },
   uz: {
-    title: 'Sotuv hisoboti',
-    today: 'Bugun',
+    title: 'SOTUV HISOBOTI',
+    today: 'BUGUN',
+    sales: 'sotuv',
+    goal: 'KUNLIK MAQSAD',
+    left: 'Qoldi',
+    goalDone: 'Kunlik maqsad bajarildi!',
+    untilClose: 'yopilishgacha',
+    closed: 'savdo kuni yopildi',
+    hourShort: 's',
+    minShort: 'd',
+    needPerHour: 'Soatiga ~{n} so‘m kerak',
+    compare: 'TAQQOSLASH',
     yesterday: 'Kecha',
-    sales: 'Bugungi sotuvlar',
-    astatka: 'Astatka jami',
-    soum: "so'm",
-    up: "Sotuv o'smoqda",
-    down: 'Sotuv tushmoqda',
-    flat: 'Kechagidek',
-    first: 'Bugungi birinchi sotuv',
-    quiet: "Bugun hali sotuv yo'q",
-    best: 'Eng yaxshi xaridor',
-  },
-  en: {
-    title: 'Sales report',
-    today: 'Today',
-    yesterday: 'Yesterday',
-    sales: 'Sales today',
-    astatka: 'Outstanding total',
-    soum: 'soum',
-    up: 'Sales are up',
-    down: 'Sales are down',
-    flat: 'Level with yesterday',
-    first: 'First sale of the day',
-    quiet: 'No sales yet today',
-    best: 'Best customer',
+    weekAvg: "Hafta o‘rtachasi",
+    record: 'Rekord',
+    week: 'HAFTA',
+    now: '← hozir',
+    weekTotal: 'Jami',
+    vsLastWeek: "o‘tgan haftaga nisbatan",
+    streak: 'SERIYA',
+    streakDays: '{n} kun sotuv bilan',
+    streakRisk: 'Bugun seriya xavf ostida!',
+    streakNone: "Seriya yo‘q — bugundan boshlang",
+    topGoods: 'TOP MAHSULOTLAR (hafta)',
+    noGoods: "Bu hafta hali sotuv bo‘lmadi",
+    stock: 'OMBOR',
+    stockLeft: 'Qoldiq',
+    runningOut: '{n} ta pozitsiya tugayapti',
+    soum: "so‘m",
+    mln: 'mln',
+    firstSaleWas: "Kun endi boshlandi — kecha birinchi sotuv {time} da bo‘lgan. Hammasi oldinda 💪",
+    quietDay: "Bugun hali sotuv yo‘q, kecha ham bu paytda tinch edi.",
+    goingWell: "Kechagidan oldindamiz. Shu ruhda 💪",
+    behind: "Kechagidan ortdamiz. Yetib olishga vaqt bor.",
+    days: ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh'],
+    months: ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun',
+             'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'],
   },
 } as const;
 
-function money(value: unknown): string {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return '0';
-  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+type Lang = keyof typeof STRINGS;
+type Words = typeof STRINGS['ru'];
+
+function fill(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ''));
+}
+
+// --- formatting --------------------------------------------------------------
+
+/** Grouped digits, matching how the app prints money. */
+function money(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  return Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+/** "52.1" — the week chart is read at a glance, not audited. */
+function millions(value: number): string {
+  return (value / 1_000_000).toFixed(1);
 }
 
 function esc(value: unknown): string {
@@ -93,76 +156,63 @@ function esc(value: unknown): string {
     .replace(/>/g, '&gt;');
 }
 
-function line(label: string, value: string): string {
-  return `${label}: <b>${value}</b>`;
+/**
+ * "Вчера ......... 67 830 000". Block characters and dot leaders both line up
+ * well enough in Telegram's font, and a <pre> block — the only way to get true
+ * monospace — would wrap the whole report in a grey slab.
+ */
+function leader(label: string, value: string, width = 16): string {
+  const dots = Math.max(1, width - label.length);
+  return `   ${label} ${'.'.repeat(dots)} ${value}`;
 }
 
-type Direction = 'up' | 'down' | 'flat' | 'first';
+/** Ten cells of progress. Clamped, so 140% of the goal does not overflow. */
+function meter(fraction: number, width = 10): string {
+  const filled = Math.max(0, Math.min(width, Math.round(fraction * width)));
+  return '▰'.repeat(filled) + '▱'.repeat(width - filled);
+}
 
-const BANNER: Record<Direction, string> = { up: '📈', down: '📉', flat: '➖', first: '🌅' };
+/** The week chart's bars, scaled against the best day in the week. */
+function bar(value: number, max: number, width = 10): string {
+  if (max <= 0) return '░'.repeat(width);
+  const filled = Math.max(0, Math.min(width, Math.round((value / max) * width)));
+  return '█'.repeat(filled) + '░'.repeat(width - filled);
+}
+
+// --- the books ---------------------------------------------------------------
+
+interface Sale {
+  /** Local day index — see `dayOf`. */
+  day: number;
+  /** Minutes past local midnight, for "the first sale was at". */
+  minute: number;
+  total: number;
+  fruit: string;
+}
 
 /**
- * The day so far, cut at local midnight rather than UTC — Uzbekistan is UTC+5,
- * so a UTC day would roll over at five in the morning and file the first sales
- * of a market day under the previous one.
+ * Days are cut at local midnight, not UTC. Uzbekistan is UTC+5, so a UTC day
+ * would roll over at five in the morning and file the first sales of a market
+ * day under the previous one.
  */
-function summarise(sales: any[], payments: any[], offsetHours: number) {
-  const paidBySale = new Map<string, number>();
-  for (const row of payments) {
-    const p = row.payload ?? {};
-    const id = String(p.saleId ?? '');
-    if (id) paidBySale.set(id, (paidBySale.get(id) ?? 0) + (Number(p.amount) || 0));
-  }
-
+function makeClock(offsetHours: number) {
   const shift = offsetHours * 3600_000;
-  const dayOf = (iso: string) => Math.floor((new Date(iso).getTime() + shift) / 86_400_000);
-  const today = Math.floor((Date.now() + shift) / 86_400_000);
-
-  let outstanding = 0;
-  let todayTotal = 0;
-  let yesterdayTotal = 0;
-  let todayCount = 0;
-  const byCustomer = new Map<string, number>();
-
-  for (const row of sales) {
-    const s = row.payload ?? {};
-    const total = (Number(s.boxesBought ?? s.boxes) || 0) * (Number(s.pricePerBox) || 0);
-    outstanding += Math.max(0, total - (paidBySale.get(row.id) ?? 0));
-
-    const day = dayOf(typeof s.createdAt === 'string' ? s.createdAt : row.updated_at);
-    if (day === today) {
-      todayTotal += total;
-      todayCount++;
-      const who = String(s.customerName ?? '').trim();
-      if (who) byCustomer.set(who, (byCustomer.get(who) ?? 0) + total);
-    } else if (day === today - 1) {
-      yesterdayTotal += total;
-    }
-  }
-
-  let best: { name: string; total: number } | null = null;
-  for (const [name, total] of byCustomer) {
-    if (!best || total > best.total) best = { name, total };
-  }
-
-  return { outstanding, todayTotal, yesterdayTotal, todayCount, best };
+  const local = (ms: number) => new Date(ms + shift);
+  return {
+    dayOf: (ms: number) => Math.floor((ms + shift) / DAY_MS),
+    minuteOf: (ms: number) => {
+      const d = local(ms);
+      return d.getUTCHours() * 60 + d.getUTCMinutes();
+    },
+    /** A Date whose UTC fields read as the local wall clock. */
+    local,
+  };
 }
 
-function readTrend(todayTotal: number, yesterdayTotal: number, minPercent: number) {
-  if (yesterdayTotal <= 0) return { direction: 'first' as Direction, change: 0 };
-  const change = Math.round(((todayTotal - yesterdayTotal) / yesterdayTotal) * 100);
-  if (Math.abs(change) < minPercent) return { direction: 'flat' as Direction, change };
-  return { direction: (change > 0 ? 'up' : 'down') as Direction, change };
-}
-
-function imageFor(direction: Direction): string | null {
-  const key =
-    direction === 'up'
-      ? 'TELEGRAM_IMAGE_UP'
-      : direction === 'down'
-        ? 'TELEGRAM_IMAGE_DOWN'
-        : 'TELEGRAM_IMAGE_FLAT';
-  return Deno.env.get(key)?.trim() || null;
+function hhmm(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 Deno.serve(async (req) => {
@@ -189,13 +239,20 @@ Deno.serve(async (req) => {
   const { data: me } = await asCaller.from('profiles').select('role').eq('id', userId).maybeSingle();
   if (me?.role !== 'owner') return fail('forbidden', 403, 'Owners only');
 
+  // The app picks the language; the secret is only the fallback for a caller
+  // that does not say (the scheduled sweep, an older build).
+  const body = await req.json().catch(() => null);
+  const asked = typeof body?.lang === 'string' ? body.lang : '';
+  const lang: Lang =
+    asked === 'ru' || asked === 'uz'
+      ? asked
+      : ((Deno.env.get('TELEGRAM_CHANNEL_LANG') === 'uz' ? 'uz' : 'ru') as Lang);
+  const t: Words = STRINGS[lang];
+
   const admin = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
-
-  const lang = (Deno.env.get('TELEGRAM_CHANNEL_LANG') ?? 'ru') as keyof typeof STRINGS;
-  const t = STRINGS[lang] ?? STRINGS.ru;
 
   const groupsRes = await admin
     .from('clients')
@@ -218,51 +275,247 @@ Deno.serve(async (req) => {
     return fail('not_linked', 409, 'No Telegram group is connected yet');
   }
 
-  const [salesRes, paymentsRes] = await Promise.all([
+  const [salesRes, trucksRes] = await Promise.all([
     admin.from('sales').select('id, updated_at, payload').is('deleted_at', null),
-    admin.from('payments').select('id, updated_at, payload').is('deleted_at', null),
+    admin.from('trucks').select('id, updated_at, payload').is('deleted_at', null),
   ]);
 
   const offset = Number(Deno.env.get('REPORT_UTC_OFFSET') ?? '5');
-  const sums = summarise(salesRes.data ?? [], paymentsRes.data ?? [], offset);
+  const clock = makeClock(offset);
 
-  const minPercent = Math.max(0, Number(Deno.env.get('TELEGRAM_TREND_MIN') ?? '5') || 0);
-  const trend = readTrend(sums.todayTotal, sums.yesterdayTotal, minPercent);
-  const photo = imageFor(trend.direction);
+  const goal = Math.max(0, Number(Deno.env.get('TELEGRAM_DAILY_GOAL') ?? '60000000') || 0);
+  const closesAt = Math.min(24, Math.max(1, Number(Deno.env.get('TELEGRAM_DAY_CLOSES_AT') ?? '24') || 24));
+  const lowStockPct = Math.max(0, Number(Deno.env.get('TELEGRAM_LOW_STOCK_PCT') ?? '20') || 0);
 
-  const arrow = trend.change > 0 ? '▲' : trend.change < 0 ? '▼' : '=';
-  const rows = [
+  const nowMs = Date.now();
+  const todayIndex = clock.dayOf(nowMs);
+  const nowLocal = clock.local(nowMs);
+  const nowMinute = clock.minuteOf(nowMs);
+
+  // --- fold the sales into the shapes the report needs -----------------------
+
+  const parsed: Sale[] = [];
+  for (const row of salesRes.data ?? []) {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const boxes = Number(p.boxesBought ?? p.boxes) || 0;
+    const total = boxes * (Number(p.pricePerBox) || 0);
+    const iso = typeof p.createdAt === 'string' ? p.createdAt : row.updated_at;
+    const ms = new Date(iso).getTime();
+    if (!Number.isFinite(ms)) continue;
+    parsed.push({
+      day: clock.dayOf(ms),
+      minute: clock.minuteOf(ms),
+      total,
+      fruit: String(p.fruit ?? '').trim(),
+    });
+  }
+
+  const byDay = new Map<number, { total: number; count: number; firstMinute: number }>();
+  for (const sale of parsed) {
+    const held = byDay.get(sale.day);
+    if (held) {
+      held.total += sale.total;
+      held.count++;
+      if (sale.minute < held.firstMinute) held.firstMinute = sale.minute;
+    } else {
+      byDay.set(sale.day, { total: sale.total, count: 1, firstMinute: sale.minute });
+    }
+  }
+
+  const dayTotal = (index: number) => byDay.get(index)?.total ?? 0;
+  const dayCount = (index: number) => byDay.get(index)?.count ?? 0;
+
+  const todayTotal = dayTotal(todayIndex);
+  const todayCount = dayCount(todayIndex);
+  const yesterdayTotal = dayTotal(todayIndex - 1);
+  const yesterdayCount = dayCount(todayIndex - 1);
+
+  // --- the week: Monday through Sunday containing today ----------------------
+
+  // getUTCDay on the shifted date is the local weekday. Sunday is 0; the week
+  // starts on Monday here, which is what the labels below assume.
+  const weekday = nowLocal.getUTCDay();
+  const mondayIndex = todayIndex - ((weekday + 6) % 7);
+
+  const weekDays = Array.from({ length: 7 }, (_, i) => ({
+    index: mondayIndex + i,
+    label: t.days[(1 + i) % 7]!,
+    total: dayTotal(mondayIndex + i),
+    isToday: mondayIndex + i === todayIndex,
+    isFuture: mondayIndex + i > todayIndex,
+  }));
+
+  const weekTotal = weekDays.reduce((sum, d) => sum + d.total, 0);
+  const weekPeak = Math.max(...weekDays.map((d) => d.total), 0);
+  const bestDay = weekDays.reduce((best, d) => (d.total > best.total ? d : best), weekDays[0]!);
+
+  const lastWeekTotal = Array.from({ length: 7 }, (_, i) => dayTotal(mondayIndex - 7 + i)).reduce(
+    (sum, n) => sum + n,
+    0
+  );
+  const weekChange =
+    lastWeekTotal > 0 ? Math.round(((weekTotal - lastWeekTotal) / lastWeekTotal) * 100) : null;
+
+  // The average is over days that have actually happened, so a Monday morning
+  // is not divided by seven and reported as a collapse.
+  const elapsed = weekDays.filter((d) => !d.isFuture).length || 1;
+  const weekAverage = weekTotal / elapsed;
+
+  // --- record, streak --------------------------------------------------------
+
+  let recordDay = { index: 0, total: 0 };
+  for (const [index, day] of byDay) {
+    if (day.total > recordDay.total) recordDay = { index, total: day.total };
+  }
+
+  // Counted back from yesterday when today is still empty: a day that has not
+  // finished yet has not broken anything.
+  let streak = 0;
+  let cursor = todayTotal > 0 ? todayIndex : todayIndex - 1;
+  while (dayTotal(cursor) > 0) {
+    streak++;
+    cursor--;
+  }
+  const streakAtRisk = streak > 0 && todayTotal === 0;
+
+  // --- top goods this week ---------------------------------------------------
+
+  const goods = new Map<string, { count: number; total: number }>();
+  for (const sale of parsed) {
+    if (sale.day < mondayIndex || sale.day > todayIndex) continue;
+    const name = sale.fruit || '—';
+    const held = goods.get(name);
+    if (held) {
+      held.count++;
+      held.total += sale.total;
+    } else {
+      goods.set(name, { count: 1, total: sale.total });
+    }
+  }
+  const topGoods = [...goods.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, 3);
+
+  // --- stock -----------------------------------------------------------------
+
+  let stockValue = 0;
+  let runningOut = 0;
+  for (const row of trucksRes.data ?? []) {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const boxes = Number(p.boxes) || 0;
+    const sold = Number(p.boxesSold) || 0;
+    const remaining = Math.max(0, boxes - sold);
+    stockValue += remaining * (Number(p.pricePerBox) || 0);
+    if (boxes > 0 && remaining > 0 && (remaining / boxes) * 100 <= lowStockPct) runningOut++;
+  }
+
+  // --- the goal --------------------------------------------------------------
+
+  const goalLeft = Math.max(0, goal - todayTotal);
+  const goalFraction = goal > 0 ? todayTotal / goal : 0;
+  const minutesLeft = Math.max(0, closesAt * 60 - nowMinute);
+  const perHour = minutesLeft > 0 ? goalLeft / (minutesLeft / 60) : 0;
+
+  // --- build it --------------------------------------------------------------
+
+  const rule = '━━━━━━━━━━━━━━━━━━';
+  const date = `${t.days[weekday]}, ${nowLocal.getUTCDate()} ${t.months[nowLocal.getUTCMonth()]}`;
+
+  const rows: string[] = [
     `🏆 <b>${t.title}</b>`,
-    '➖➖➖➖➖➖➖',
-    `${BANNER[trend.direction]} <b>${t[trend.direction]}</b>`,
-    line(t.today, `${money(sums.todayTotal)} ${t.soum}`),
+    `📅 ${date} · ${hhmm(nowMinute)}`,
+    rule,
+    '',
+    `💰 <b>${t.today}</b>`,
+    `   ${money(todayTotal)} ${t.soum} · ${todayCount} ${t.sales}`,
+    `   ${meter(goalFraction)}  ${Math.round(goalFraction * 100)}%`,
+    '',
+    `🎯 <b>${t.goal}</b> · ${money(goal)} ${t.soum}`,
   ];
 
-  if (trend.direction !== 'first') {
+  if (goalLeft === 0) {
+    rows.push(`   🎉 ${t.goalDone}`);
+  } else {
+    rows.push(`   ${t.left}: ${money(goalLeft)} ${t.soum}`);
+    if (minutesLeft > 0) {
+      const h = Math.floor(minutesLeft / 60);
+      const m = minutesLeft % 60;
+      rows.push(`   ⏳ ${h}${t.hourShort} ${m}${t.minShort} ${t.untilClose}`);
+      rows.push(`   💡 ${fill(t.needPerHour, { n: money(perHour) })}`);
+    } else {
+      rows.push(`   ⏳ ${t.closed}`);
+    }
+  }
+
+  rows.push(
+    '',
+    `📈 <b>${t.compare}</b>`,
+    leader(t.yesterday, `${money(yesterdayTotal)}  (${yesterdayCount} ${t.sales})`),
+    leader(t.weekAvg, money(weekAverage)),
+  );
+
+  if (recordDay.total > 0) {
+    const recordDate = clock.local(recordDay.index * DAY_MS);
     rows.push(
-      line(t.yesterday, `${money(sums.yesterdayTotal)} ${t.soum} ${arrow} ${Math.abs(trend.change)}%`)
+      leader(
+        t.record,
+        `${money(recordDay.total)}  🥇 (${recordDate.getUTCDate()} ${t.months[recordDate.getUTCMonth()]})`
+      )
     );
   }
 
-  rows.push(line(t.sales, String(sums.todayCount)));
-  if (sums.best) {
-    rows.push(line(t.best, `${esc(sums.best.name)} · ${money(sums.best.total)} ${t.soum}`));
+  rows.push('', `📊 <b>${t.week}</b>`);
+  for (const day of weekDays) {
+    const flag = day.isToday ? ` ${t.now}` : day.total > 0 && day === bestDay ? ' 🔥' : '';
+    rows.push(`   ${day.label} ${bar(day.total, weekPeak)}  ${millions(day.total)} ${t.mln}${flag}`);
   }
-  if (sums.todayCount === 0) rows.push(t.quiet);
-  rows.push('➖➖➖➖➖➖➖', line(t.astatka, `${money(sums.outstanding)} ${t.soum}`));
+  rows.push('   ─────────────────────');
+  rows.push(
+    `   ${t.weekTotal}: ${millions(weekTotal)} ${t.mln}` +
+      (weekChange === null
+        ? ''
+        : ` · ${weekChange >= 0 ? '📈 +' : '📉 '}${weekChange}% ${t.vsLastWeek}`)
+  );
+
+  rows.push('', `🔥 <b>${t.streak}</b>: ${streak > 0 ? fill(t.streakDays, { n: streak }) : t.streakNone}`);
+  if (streakAtRisk) rows.push(`   ⚠️ ${t.streakRisk}`);
+
+  rows.push('', `🏅 <b>${t.topGoods}</b>`);
+  if (topGoods.length === 0) {
+    rows.push(`   ${t.noGoods}`);
+  } else {
+    topGoods.forEach(([name, stat], i) => {
+      rows.push(
+        `   ${i + 1}. ${esc(name)} ... ${stat.count} ${t.sales} · ${millions(stat.total)} ${t.mln}`
+      );
+    });
+  }
+
+  rows.push('', `📦 <b>${t.stock}</b>`, `   ${t.stockLeft}: ${money(stockValue)} ${t.soum}`);
+  if (runningOut > 0) rows.push(`   ⚠️ ${fill(t.runningOut, { n: runningOut })}`);
+
+  // The closing line reads the day rather than repeating it — the one place the
+  // report is allowed to have an opinion.
+  const yesterdayFirst = byDay.get(todayIndex - 1)?.firstMinute;
+  let closing: string;
+  if (todayTotal === 0 && yesterdayFirst !== undefined && yesterdayFirst > nowMinute) {
+    closing = fill(t.firstSaleWas, { time: hhmm(yesterdayFirst) });
+  } else if (todayTotal === 0) {
+    closing = t.quietDay;
+  } else if (todayTotal >= yesterdayTotal) {
+    closing = t.goingWell;
+  } else {
+    closing = t.behind;
+  }
+
+  rows.push('', rule, `💬 ${closing}`);
 
   const text = rows.join('\n');
 
-  const call = (method: string, body: Record<string, unknown>) =>
+  const call = (method: string, payload: Record<string, unknown>) =>
     fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     });
-
-  // A caption longer than Telegram allows comes back truncated rather than
-  // refused, so past that length the picture is dropped, never the figures.
-  const withPhoto = photo !== null && text.length <= 1024;
 
   let delivered = 0;
   let pinned = 0;
@@ -271,20 +524,16 @@ Deno.serve(async (req) => {
   for (const group of groups) {
     const chatId = group.telegram_chat_id!;
     try {
-      let res = withPhoto
-        ? await call('sendPhoto', { chat_id: chatId, photo, caption: text, parse_mode: 'HTML' })
-        : await call('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
-      let body = await res.json().catch(() => null);
+      const res = await call('sendMessage', {
+        chat_id: chatId,
+        text,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+      });
+      const sent = await res.json().catch(() => null);
 
-      // A picture Telegram will not fetch must not cost the group the report.
-      if (withPhoto && !body?.ok) {
-        console.error('report photo failed, falling back to text', group.id, body?.description);
-        res = await call('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
-        body = await res.json().catch(() => null);
-      }
-
-      if (!body?.ok) {
-        const description = String(body?.description ?? `HTTP ${res.status}`);
+      if (!sent?.ok) {
+        const description = String(sent?.description ?? `HTTP ${res.status}`);
         console.error('report failed', group.id, description);
         problems.push(description);
         continue;
@@ -292,7 +541,7 @@ Deno.serve(async (req) => {
 
       delivered++;
       const messageId: number | null =
-        typeof body.result?.message_id === 'number' ? body.result.message_id : null;
+        typeof sent.result?.message_id === 'number' ? sent.result.message_id : null;
       if (messageId === null) continue;
 
       // Replace the pin rather than stack one on top of the last, so the group
@@ -319,12 +568,15 @@ Deno.serve(async (req) => {
 
       if (pinBody?.ok) {
         pinned++;
-        await admin
-          .from('telegram_posts')
-          .upsert(
-            { kind: 'report', doc_id: String(chatId), message_id: messageId, posted_at: new Date().toISOString() },
-            { onConflict: 'kind,doc_id' }
-          );
+        await admin.from('telegram_posts').upsert(
+          {
+            kind: 'report',
+            doc_id: String(chatId),
+            message_id: messageId,
+            posted_at: new Date().toISOString(),
+          },
+          { onConflict: 'kind,doc_id' }
+        );
       } else {
         // Almost always "not enough rights": the bot is a member, not an admin.
         // The report is already in the group, so this is worth reporting back
