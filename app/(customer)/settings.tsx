@@ -4,6 +4,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Button } from '@/components/Button';
 import { Card, Divider, SectionHeader } from '@/components/Card';
 import { Header } from '@/components/Header';
+import { InstallRow } from '@/components/InstallRow';
 import { Screen } from '@/components/Screen';
 import { Segmented } from '@/components/Segmented';
 import { SettingBlock, SettingRow, ToggleRow } from '@/components/SettingRow';
@@ -142,6 +143,7 @@ export default function CustomerSettings() {
           <SectionHeader title={t('account')} />
           <Card>
             <SettingRow label={profile?.full_name ?? t('none')} description={t('roleCustomer')} />
+            <InstallRow />
           </Card>
         </Animated.View>
 

@@ -153,6 +153,14 @@ const en = {
   screenLockNative: 'Face ID, Touch ID or your passcode is asked for first, with the pattern behind it. Both are always on.',
   screenLockNativeUnavailable: 'This phone has no Face ID, Touch ID or passcode set up, so the pattern is the only lock.',
 
+  // Installing the website as a desktop app. Web only — see lib/install.web.ts.
+  installApp: 'Install on this device',
+  installAction: 'Install',
+  installHint: 'Adds Truck to your desktop and opens it in its own window, without the browser around it.',
+  installDone: 'Running as an app. Nothing else to do.',
+  installedBadge: 'Installed',
+  installManualIos: 'In Safari, tap Share, then “Add to Home Screen”.',
+
   noCustomersHint: 'Add one with +, or a customer appears here once they create an account.',
   addCustomer: 'Add customer',
   newCustomer: 'New customer',
@@ -473,6 +481,13 @@ const ru: Record<StringKey, string> = {
   screenLockPattern: 'Графический ключ спрашивается при каждом запуске и не отключается.',
   screenLockNative: 'Сначала Face ID, Touch ID или код-пароль, за ними — графический ключ. Оба всегда включены.',
   screenLockNativeUnavailable: 'На этом телефоне нет Face ID, Touch ID или код-пароля, поэтому остаётся только графический ключ.',
+
+  installApp: 'Установить на устройство',
+  installAction: 'Установить',
+  installHint: 'Добавит Truck на рабочий стол и будет открывать его в отдельном окне, без браузера вокруг.',
+  installDone: 'Уже работает как приложение. Ничего делать не нужно.',
+  installedBadge: 'Установлено',
+  installManualIos: 'В Safari нажмите «Поделиться», затем «На экран „Домой“».',
   faceTapToUnlock: 'Нажмите, чтобы разблокировать',
   faceLookAtCamera: 'Смотрите в камеру',
   faceNotRecognised: 'Не распознано',
@@ -783,6 +798,13 @@ const uz: Record<StringKey, string> = {
   screenLockPattern: "Grafik kalit har safar so'raladi va o'chirilmaydi.",
   screenLockNative: "Avval Face ID, Touch ID yoki kod, ortidan grafik kalit. Ikkalasi ham doim yoqilgan.",
   screenLockNativeUnavailable: "Bu telefonda Face ID, Touch ID yoki kod sozlanmagan, shuning uchun faqat grafik kalit qoladi.",
+
+  installApp: "Shu qurilmaga o'rnatish",
+  installAction: "O'rnatish",
+  installHint: "Truck'ni ish stoliga qo'shadi va uni brauzersiz, alohida oynada ochadi.",
+  installDone: "Ilova sifatida ishlayapti. Boshqa hech nima kerak emas.",
+  installedBadge: "O'rnatilgan",
+  installManualIos: "Safari'da «Ulashish», so'ng «Bosh ekranga qo'shish» ni bosing.",
   faceTapToUnlock: 'Ochish uchun bosing',
   faceLookAtCamera: 'Kameraga qarang',
   faceNotRecognised: 'Tanilmadi',

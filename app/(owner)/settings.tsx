@@ -8,6 +8,7 @@ import { Segmented } from '@/components/Segmented';
 import { AccentPicker } from '@/components/AccentPicker';
 import { FaceIdRow } from '@/components/FaceIdRow';
 import { FaceUnlockRow } from '@/components/FaceUnlockRow';
+import { InstallRow } from '@/components/InstallRow';
 import { ScreenLockRow } from '@/components/ScreenLockRow';
 import { SettingBlock, SettingRow } from '@/components/SettingRow';
 import { Text } from '@/components/Text';
@@ -113,6 +114,9 @@ export default function OwnerSettings() {
                 <FaceIdRow />
               </>
             ) : null}
+            {/* Brings its own divider, because it is the row most likely to
+                render nothing at all. */}
+            <InstallRow />
           </Card>
         </Animated.View>
 
