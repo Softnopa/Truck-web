@@ -122,3 +122,6 @@ Desktop.ini
 $RECYCLE.BIN/
 
 .vercel
+
+# Written by `deno check` when typechecking the edge functions locally.
+deno.lock
