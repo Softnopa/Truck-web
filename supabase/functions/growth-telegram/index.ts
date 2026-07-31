@@ -127,9 +127,14 @@ const STRINGS = {
     months: ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun',
              'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'],
   },
-} as const;
+};
 
 type Lang = keyof typeof STRINGS;
+
+/**
+ * Derived from the Russian block, which makes it the source of truth: a key
+ * missing from `uz` fails where that block is assigned to `Words`.
+ */
 type Words = typeof STRINGS['ru'];
 
 function fill(template: string, values: Record<string, string | number>): string {

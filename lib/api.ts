@@ -336,7 +336,9 @@ export async function createRandomSale(
     author
   );
 
-  await createPayment(saleId, input.boxes * input.pricePerBox);
+  // Silent: nothing was ever owed here, so "the debt came back" would be a lie
+  // — and the sale itself is already announced.
+  await createPayment(saleId, input.boxes * input.pricePerBox, { announce: false });
 }
 
 /** Keeps the truck's sold counter in step with the sale just written. */
@@ -350,7 +352,19 @@ async function bumpTruckSold(truckId: string, boxes: number): Promise<void> {
   await supabase.from('trucks').update({ payload: { ...next }, updated_at: now }).eq('id', truckId);
 }
 
-export async function createPayment(saleId: string, amount: number): Promise<void> {
+/**
+ * Records money coming back against a sale.
+ *
+ * Announced by default, because a debt being cleared is the news the groups
+ * most want after the sale itself. `announce: false` is for the one case where
+ * it is not news at all — a walk-up buyer paying as they buy, where the
+ * "payment" is bookkeeping for a debt that never existed.
+ */
+export async function createPayment(
+  saleId: string,
+  amount: number,
+  options?: { announce?: boolean }
+): Promise<void> {
   const now = new Date().toISOString();
   const id = docId('pay');
   const doc: PaymentDoc = { id, saleId, amount, createdAt: now };
@@ -358,10 +372,18 @@ export async function createPayment(saleId: string, amount: number): Promise<voi
     .from('payments')
     .insert({ id, payload: { ...doc }, updated_at: now });
   if (error) throw error;
+
+  if (options?.announce === false) return;
+  void announceToChannel('payment', id).catch((err) => {
+    console.warn('Telegram announce failed for payment', id, err);
+  });
 }
 
 /** Posts a notification to the Telegram channel via the edge function. */
-export async function announceToChannel(kind: 'truck' | 'sale', docId: string): Promise<void> {
+export async function announceToChannel(
+  kind: 'truck' | 'sale' | 'payment',
+  docId: string
+): Promise<void> {
   await invokeFunction('announce-telegram', { kind, id: docId });
 }
 

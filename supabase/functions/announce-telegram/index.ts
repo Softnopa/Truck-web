@@ -1,8 +1,9 @@
 // Deploy via: Supabase Dashboard -> Edge Functions -> Create a function -> paste this file.
 //
-// Posts a line in the Telegram channel whenever an owner adds a truck or
-// records a sale. Called by the app (lib/api.ts `announceToChannel`) with the
-// owner's session token attached automatically by supabase-js.
+// Posts a line in the Telegram channel whenever an owner adds a truck, records
+// a sale, or takes money back against a debt. Called by the app (lib/api.ts
+// `announceToChannel`) with the owner's session token attached automatically by
+// supabase-js.
 //
 // The caller sends only a kind and an id — never the text. The message is built
 // here from the row as the database has it, read back under the caller's own
@@ -12,7 +13,9 @@
 // Secrets (Dashboard -> Edge Functions -> Secrets):
 //   TELEGRAM_BOT_TOKEN    the bot, shared with the other two functions
 //   TELEGRAM_CHANNEL_ID   e.g. -1001234567890 — see tools/telegram, `channel`
-//   TELEGRAM_CHANNEL_LANG optional: ru (default), uz or en
+//   TELEGRAM_CHANNEL_LANG optional: ru (default) or uz. The bot has no English.
+//   REPORT_UTC_OFFSET     hours ahead of UTC the clock runs at (default 5), so
+//                         "came at 14:20" is the time anyone there saw
 //
 // Groups additionally get the day read against yesterday, as a banner with a
 // picture. Set whichever of these you have; a direction with no picture is
@@ -23,7 +26,16 @@
 //   TELEGRAM_TREND_MIN    percent that counts as a move at all (default 5)
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
-type Kind = 'truck' | 'sale';
+type Kind = 'truck' | 'sale' | 'payment';
+
+/**
+ * The bucket every anonymous sale attaches to — see `RANDOM_CUSTOMER_ID` in
+ * lib/api.ts. Those sales are settled the instant they are written, and
+ * announcing each of those settlements as "the debt came back" would fill the
+ * group with news about a debt that never existed. The app already asks for
+ * silence on them; this is the guard that does not depend on it doing so.
+ */
+const RANDOM_CUSTOMER_ID = 'cust_random';
 
 // The app also runs as a web build, and a browser will not POST here until a
 // preflight OPTIONS has been answered with these. Repeated in each function on
@@ -46,9 +58,16 @@ function fail(code: string, status: number, message: string): Response {
   });
 }
 
+/**
+ * Russian and Uzbek only. English was carried here because the app has three
+ * languages, but the app's languages are what an *owner* reads on a screen —
+ * the groups and the channel are read by drivers and buyers, and none of them
+ * asked for English. `TELEGRAM_CHANNEL_LANG=en` now resolves to Russian.
+ */
 const STRINGS = {
   ru: {
     truck: 'Новая машина',
+    truckCame: 'Пришла',
     sale: 'Продажа',
     plate: 'Номер',
     fruit: 'Товар',
@@ -67,9 +86,22 @@ const STRINGS = {
     down: 'Продажи падают',
     flat: 'Наравне со вчера',
     first: 'Первая продажа за день',
+    // A debt coming back is its own kind of news, so it gets its own words.
+    repaid: 'Долг возвращён',
+    repaidBy: '{name} вернул долг',
+    when: 'Когда',
+    amount: 'Сумма',
+    stillOwes: 'Осталось',
+    debtClosed: 'Долг закрыт полностью',
+    /** Russian puts the preposition in front of the clock; Uzbek puts it after. */
+    atTime: 'в {time}',
+    days: ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'],
+    months: ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+             'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
   },
   uz: {
     truck: 'Yangi mashina',
+    truckCame: 'Keldi',
     sale: 'Sotuv',
     plate: 'Raqam',
     fruit: 'Mahsulot',
@@ -88,29 +120,28 @@ const STRINGS = {
     down: 'Sotuv tushmoqda',
     flat: 'Kechagidek',
     first: 'Bugungi birinchi sotuv',
+    repaid: 'Qarz qaytarildi',
+    repaidBy: '{name} qarzini qaytardi',
+    when: 'Qachon',
+    amount: 'Summa',
+    stillOwes: 'Qoldi',
+    debtClosed: "Qarz to'liq yopildi",
+    atTime: '{time} da',
+    days: ['yak', 'dush', 'sesh', 'chor', 'pay', 'jum', 'shan'],
+    months: ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun',
+             'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'],
   },
-  en: {
-    truck: 'New truck',
-    sale: 'Sale',
-    plate: 'Plate',
-    fruit: 'Fruit',
-    boxes: 'boxes',
-    price: 'Price per box',
-    total: 'Total',
-    customer: 'Customer',
-    truckLabel: 'Truck',
-    by: 'Added by',
-    soum: 'soum',
-    astatka: 'Outstanding total',
-    today: 'Today',
-    yesterday: 'yesterday',
-    gotMoney: 'Took payment',
-    up: 'Sales are up',
-    down: 'Sales are down',
-    flat: 'Level with yesterday',
-    first: 'First sale of the day',
-  },
-} as const;
+};
+
+/**
+ * Derived from the Russian block, which makes it the source of truth: a key
+ * missing from `uz` fails where that block is assigned to `Words` below.
+ */
+type Words = typeof STRINGS['ru'];
+
+function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? '');
+}
 
 /** Grouped digits, matching how the app prints money. */
 function money(value: unknown): string {
@@ -130,11 +161,45 @@ function line(label: string, value: string): string {
   return `${label}: <b>${value}</b>`;
 }
 
-function truckMessage(payload: Record<string, unknown>, t: typeof STRINGS['ru']): string {
+/**
+ * The wall clock the business runs on.
+ *
+ * Everything stored is UTC, and a group reading "пришла в 09:20" about a truck
+ * that arrived at 14:20 would rightly conclude the bot is broken. Uzbekistan is
+ * UTC+5 and does not observe daylight saving, so a fixed offset is exact rather
+ * than an approximation — `REPORT_UTC_OFFSET` carries it, shared with the
+ * report function.
+ */
+function localParts(iso: string | undefined, offsetHours: number) {
+  const ms = iso ? new Date(iso).getTime() : Date.now();
+  const d = new Date((Number.isFinite(ms) ? ms : Date.now()) + offsetHours * 3600_000);
+  return {
+    weekday: d.getUTCDay(),
+    day: d.getUTCDate(),
+    month: d.getUTCMonth(),
+    hhmm: `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`,
+  };
+}
+
+/** "в 14:20", or "31 июля, в 14:20" when the day is worth naming too. */
+function stamp(iso: string | undefined, offsetHours: number, t: Words, withDate: boolean): string {
+  const p = localParts(iso, offsetHours);
+  const clock = fill(t.atTime, { time: p.hhmm });
+  return withDate ? `${p.day} ${t.months[p.month]}, ${clock}` : clock;
+}
+
+function truckMessage(
+  payload: Record<string, unknown>,
+  t: Words,
+  offsetHours: number
+): string {
   const boxes = Number(payload.boxes) || 0;
   const price = Number(payload.pricePerBox) || 0;
+  const arrived = typeof payload.createdAt === 'string' ? payload.createdAt : undefined;
   return [
     `🚚 <b>${t.truck}</b>`,
+    // The time it turned up, which is the first thing anyone in the group asks.
+    line(t.truckCame, stamp(arrived, offsetHours, t, false)),
     line(t.plate, esc(payload.truckNumber)),
     line(t.fruit, `${esc(payload.fruit)} · ${money(boxes)} ${t.boxes}`),
     line(t.price, `${money(price)} ${t.soum}`),
@@ -213,7 +278,7 @@ const BANNER: Record<Direction, string> = {
 function trendLine(
   sums: { todayTotal: number; yesterdayTotal: number },
   trend: Trend,
-  t: typeof STRINGS['ru']
+  t: Words
 ): string {
   const head = `${t.today}: <b>${money(sums.todayTotal)} ${t.soum}</b>`;
   if (trend.direction === 'first') return head;
@@ -233,7 +298,7 @@ function imageFor(direction: Direction): string | null {
   return Deno.env.get(key)?.trim() || null;
 }
 
-function saleMessage(payload: Record<string, unknown>, plate: string, t: typeof STRINGS['ru']): string {
+function saleMessage(payload: Record<string, unknown>, plate: string, t: Words): string {
   const boxes = Number(payload.boxesBought ?? payload.boxes) || 0;
   const price = Number(payload.pricePerBox) || 0;
   const rows = [
@@ -262,11 +327,16 @@ Deno.serve(async (req) => {
   // and said so only in a log line nobody reads.
   const channelId = Deno.env.get('TELEGRAM_CHANNEL_ID') || null;
 
-  const lang = (Deno.env.get('TELEGRAM_CHANNEL_LANG') ?? 'ru') as keyof typeof STRINGS;
-  const t = STRINGS[lang] ?? STRINGS.ru;
+  // Russian unless Uzbek is asked for by name — English is gone, so an old
+  // `en` in the secret quietly resolves to Russian rather than crashing.
+  const t: Words = Deno.env.get('TELEGRAM_CHANNEL_LANG') === 'uz' ? STRINGS.uz : STRINGS.ru;
+  const offsetHours = Number(Deno.env.get('REPORT_UTC_OFFSET') ?? '5');
 
   const body = await req.json().catch(() => null);
-  const kind = body?.kind === 'truck' || body?.kind === 'sale' ? (body.kind as Kind) : null;
+  const kind =
+    body?.kind === 'truck' || body?.kind === 'sale' || body?.kind === 'payment'
+      ? (body.kind as Kind)
+      : null;
   const id = typeof body?.id === 'string' ? body.id : null;
   if (!kind || !id) return fail('bad_request', 400, 'kind and id are required');
 
@@ -291,12 +361,12 @@ Deno.serve(async (req) => {
 
   const { data: me } = await asCaller
     .from('profiles')
-    .select('role')
+    .select('role, full_name')
     .eq('id', userId)
     .maybeSingle();
   if (me?.role !== 'owner') return fail('forbidden', 403, 'Only owners announce to the channel');
 
-  const table = kind === 'truck' ? 'trucks' : 'sales';
+  const table = kind === 'truck' ? 'trucks' : kind === 'sale' ? 'sales' : 'payments';
   const { data: row } = await asCaller.from(table).select('payload').eq('id', id).maybeSingle();
   if (!row?.payload) return fail('not_found', 404, `No ${kind} with id ${id}`);
 
@@ -307,6 +377,54 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
+
+  // A repayment names the person and the debt they still carry, and neither
+  // lives on the payment — it holds only a sale id and an amount. Resolved
+  // before the claim below, so a payment that turns out not to be news never
+  // burns its dedupe row.
+  let repayment: { customerName: string; remaining: number } | null = null;
+
+  if (kind === 'payment') {
+    const saleId = typeof payload.saleId === 'string' ? payload.saleId : '';
+    const { data: saleRow } = await asCaller
+      .from('sales')
+      .select('payload')
+      .eq('id', saleId)
+      .maybeSingle();
+
+    const sale = (saleRow?.payload ?? {}) as Record<string, unknown>;
+    const customerId = typeof sale.customerId === 'string' ? sale.customerId : '';
+
+    // Nothing to announce: a walk-up buyer who paid as they bought never owed
+    // anything, and a sale that has gone leaves no one to name.
+    if (!customerId || customerId === RANDOM_CUSTOMER_ID) {
+      return new Response(JSON.stringify({ ok: true, skipped: true }), { headers: JSON_HEADERS });
+    }
+
+    // What they still owe *after* this payment, straight from the books rather
+    // than from whatever the screen that recorded it happened to be showing.
+    const [salesRes, paymentsRes] = await Promise.all([
+      admin.from('sales').select('id, payload').is('deleted_at', null),
+      admin.from('payments').select('id, payload').is('deleted_at', null),
+    ]);
+
+    const paidBySale = new Map<string, number>();
+    for (const p of paymentsRes.data ?? []) {
+      const pay = (p.payload ?? {}) as Record<string, unknown>;
+      const key = String(pay.saleId ?? '');
+      if (key) paidBySale.set(key, (paidBySale.get(key) ?? 0) + (Number(pay.amount) || 0));
+    }
+
+    let remaining = 0;
+    for (const s of salesRes.data ?? []) {
+      const doc = (s.payload ?? {}) as Record<string, unknown>;
+      if (doc.customerId !== customerId) continue;
+      const boxes = Number(doc.boxesBought ?? doc.boxes) || 0;
+      remaining += Math.max(0, boxes * (Number(doc.pricePerBox) || 0) - (paidBySale.get(s.id) ?? 0));
+    }
+
+    repayment = { customerName: String(sale.customerName ?? '').trim(), remaining };
+  }
 
   // Claim first, post second. Whoever wins the insert owns the announcement;
   // every other attempt for the same document leaves quietly.
@@ -322,7 +440,21 @@ Deno.serve(async (req) => {
 
   let text: string;
   if (kind === 'truck') {
-    text = truckMessage(payload, t);
+    text = truckMessage(payload, t, offsetHours);
+  } else if (kind === 'payment') {
+    const rows = [
+      `💸 <b>${fill(t.repaidBy, { name: esc(repayment?.customerName) || '—' })}</b>`,
+      line(t.amount, `${money(payload.amount)} ${t.soum}`),
+      line(
+        t.when,
+        stamp(typeof payload.createdAt === 'string' ? payload.createdAt : undefined, offsetHours, t, true)
+      ),
+      (repayment?.remaining ?? 0) > 0
+        ? line(t.stillOwes, `${money(repayment!.remaining)} ${t.soum}`)
+        : `✅ ${t.debtClosed}`,
+    ];
+    if (me?.full_name) rows.push(`${t.gotMoney}: ${esc(me.full_name)}`);
+    text = rows.join('\n');
   } else {
     // Sales name their truck by id; the channel wants the plate. Missing is
     // fine — a sale can be recorded without one.
